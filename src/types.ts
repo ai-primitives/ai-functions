@@ -1,7 +1,9 @@
 import { z } from 'zod'
+import { LanguageModelV1 } from 'ai'
 
 export interface AIFunctionOptions {
-  model?: string
+  model?: LanguageModelV1
+  prompt?: string
 }
 
 export type AIFunction<T extends Record<string, any> = Record<string, any>> = {
@@ -11,12 +13,16 @@ export type AIFunction<T extends Record<string, any> = Record<string, any>> = {
   schema?: z.ZodSchema
 }
 
-export type AITemplateFunction = {
-  (strings: TemplateStringsArray, ...values: any[]): Promise<string>
-  (strings: TemplateStringsArray, ...values: any[]): {
-    (options?: AIFunctionOptions): Promise<string>
-  }
+export interface BaseTemplateFunction extends AsyncIterable<string> {
+  (strings: TemplateStringsArray, ...values: any[]): Promise<string> | AsyncIterable<string>
+  (options?: AIFunctionOptions): Promise<string>
+  withOptions: (options?: AIFunctionOptions) => Promise<string>
   [Symbol.asyncIterator](): AsyncIterator<string>
+}
+
+export type AITemplateFunction = BaseTemplateFunction & {
+  (strings: TemplateStringsArray, ...values: any[]): Promise<string>
+  withOptions: (options?: AIFunctionOptions) => Promise<string>
 }
 
 export interface AI extends AITemplateFunction {
@@ -29,4 +35,4 @@ export interface AI extends AITemplateFunction {
   }>
 }
 
-export type ListFunction = AITemplateFunction
+export type ListFunction = BaseTemplateFunction
