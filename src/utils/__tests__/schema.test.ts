@@ -5,7 +5,7 @@ import { z } from 'zod'
 describe('createSchemaFromTemplate', () => {
   it('should create enum schema for pipe-separated values', () => {
     const template = {
-      productType: 'App | API | Marketplace'
+      productType: 'App | API | Marketplace',
     }
     const schema = createSchemaFromTemplate(template)
     const result = schema.safeParse({ productType: 'App' })
@@ -20,7 +20,7 @@ describe('createSchemaFromTemplate', () => {
 
   it('should create string schema with description', () => {
     const template = {
-      description: 'website meta description'
+      description: 'website meta description',
     }
     const schema = createSchemaFromTemplate(template)
     const result = schema.safeParse({ description: 'A great website' })
@@ -32,7 +32,7 @@ describe('createSchemaFromTemplate', () => {
 
   it('should enforce word count constraints', () => {
     const template = {
-      customer: 'ideal customer profile in 3-5 words'
+      customer: 'ideal customer profile in 3-5 words',
     }
     const schema = createSchemaFromTemplate(template)
 

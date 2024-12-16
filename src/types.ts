@@ -6,11 +6,11 @@ export interface AIFunctionOptions {
   prompt?: string
 }
 
-export type AIFunction<T extends Record<string, unknown> = Record<string, unknown>> = {
-  (): Promise<{ schema: z.ZodSchema }>
-  (args: T): Promise<T>
-  (args: T, options: AIFunctionOptions): Promise<T>
-  schema?: z.ZodSchema
+export type AIFunction<T extends z.ZodTypeAny = z.ZodTypeAny> = {
+  (): Promise<{ schema: T }>
+  (args: z.infer<T>): Promise<z.infer<T>>
+  (args: z.infer<T>, options: AIFunctionOptions): Promise<z.infer<T>>
+  schema?: T
 }
 
 export type AsyncIterablePromise<T> = Promise<T> & AsyncIterable<string>
@@ -28,13 +28,12 @@ export type AITemplateFunction = BaseTemplateFunction & {
 }
 
 export interface AI extends AITemplateFunction {
-  categorizeProduct: AIFunction<{
-    productType?: string
-    customer?: string
-    solution?: string
-    description?: string
-    domain?: string
-  }>
+  categorizeProduct: AIFunction<z.ZodObject<{
+    productType: z.ZodEnum<['App', 'API', 'Marketplace', 'Platform', 'Packaged Service', 'Professional Service', 'Website']>
+    customer: z.ZodString
+    solution: z.ZodString
+    description: z.ZodString
+  }>>
 }
 
 export type ListFunction = BaseTemplateFunction

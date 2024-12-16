@@ -6,8 +6,37 @@ import type { GenerateTextResult, GenerateObjectResult, StreamTextResult } from 
 
 // Define types for our mocks
 type Tools = Record<string, never>
-type MockStream = {
+
+interface MockStream {
   [Symbol.asyncIterator](): AsyncGenerator<string, void, unknown>
+}
+
+interface MockStreamTextResult {
+  textStream: MockStream
+  usage: Promise<{
+    promptTokens: number
+    completionTokens: number
+    totalTokens: number
+  }>
+  warnings: string[]
+  finishReason: 'stop' | 'length' | 'content-filter' | 'tool-calls' | 'error' | 'other'
+  experimental_providerMetadata: Record<string, unknown>
+  text: string
+  tools: Record<string, never>
+  toolChoice: 'auto' | 'none' | 'required'
+  temperature: number
+  topP?: number
+  presencePenalty?: number
+  frequencyPenalty?: number
+  stop?: string[]
+  maxTokens?: number
+  seed?: number
+  _internal?: Record<string, unknown>
+  toolCalls: never[]
+  toolResults: never[]
+  steps: never[]
+  request: { prompt: string }
+  model: { id: string; provider: string }
 }
 
 // Mock the ai package
@@ -25,7 +54,7 @@ describe('ai', () => {
   it('should support template literal usage', async () => {
     vi.mocked(generateText).mockResolvedValue({
       text: 'Generated text',
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 }
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
     } as GenerateTextResult<Tools, string>)
 
     const result = await ai`Hello ${123}`
@@ -42,11 +71,14 @@ describe('ai', () => {
 
     vi.mocked(generateObject).mockResolvedValue({
       object: mockResult,
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 }
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
     } as GenerateObjectResult<typeof mockResult>)
 
     const result = await ai.categorizeProduct({
-      domain: 'quickbooks.com'
+      productType: 'App',
+      customer: 'Small Business Owners',
+      solution: 'Automated accounting software',
+      description: 'AI-powered accounting automation for small businesses',
     })
     expect(result).toEqual(mockResult)
   })
@@ -64,13 +96,28 @@ describe('ai', () => {
         for (const chunk of chunks) {
           yield chunk
         }
-      }
+      },
     }
 
-    vi.mocked(streamText).mockReturnValue({
+    const mockResult: MockStreamTextResult = {
       textStream: mockStream,
-      usage: Promise.resolve({ promptTokens: 10, completionTokens: 20, totalTokens: 30 })
-    } as StreamTextResult<Tools>)
+      usage: Promise.resolve({ promptTokens: 10, completionTokens: 20, totalTokens: 30 }),
+      warnings: [],
+      finishReason: 'stop',
+      experimental_providerMetadata: {},
+      text: chunks.join(''),
+      tools: {},
+      toolChoice: 'auto',
+      temperature: 0.7,
+      maxTokens: 100,
+      toolCalls: [],
+      toolResults: [],
+      steps: [],
+      request: { prompt: 'Hello World' },
+      model: { id: 'gpt-4o', provider: '@ai-sdk/openai' },
+    }
+
+    vi.mocked(streamText).mockReturnValue(mockResult as unknown as StreamTextResult<Tools>)
 
     const collected: string[] = []
     for await (const chunk of ai`Hello World`) {
@@ -89,7 +136,7 @@ describe('list', () => {
   it('should support template literal usage', async () => {
     vi.mocked(generateText).mockResolvedValue({
       text: 'Item 1\nItem 2\nItem 3',
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 }
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
     } as GenerateTextResult<Tools, string>)
 
     const result = await list`fun things to do in Miami`
@@ -103,13 +150,28 @@ describe('list', () => {
         for (const chunk of chunks) {
           yield chunk
         }
-      }
+      },
     }
 
-    vi.mocked(streamText).mockReturnValue({
+    const mockResult: MockStreamTextResult = {
       textStream: mockStream,
-      usage: Promise.resolve({ promptTokens: 10, completionTokens: 20, totalTokens: 30 })
-    } as StreamTextResult<Tools>)
+      usage: Promise.resolve({ promptTokens: 10, completionTokens: 20, totalTokens: 30 }),
+      warnings: [],
+      finishReason: 'stop',
+      experimental_providerMetadata: {},
+      text: chunks.join(''),
+      tools: {},
+      toolChoice: 'auto',
+      temperature: 0.7,
+      maxTokens: 100,
+      toolCalls: [],
+      toolResults: [],
+      steps: [],
+      request: { prompt: 'fun things to do in Miami' },
+      model: { id: 'gpt-4o', provider: '@ai-sdk/openai' },
+    }
+
+    vi.mocked(streamText).mockReturnValue(mockResult as unknown as StreamTextResult<Tools>)
 
     const collected: string[] = []
     for await (const chunk of list`fun things to do in Miami`) {

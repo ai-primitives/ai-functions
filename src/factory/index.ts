@@ -5,23 +5,23 @@ import type { AIFunctionOptions, BaseTemplateFunction, AIFunction, AsyncIterable
 
 const DEFAULT_MODEL = openai('gpt-4o')
 
-export function createAIFunction<T extends Record<string, unknown>>(schema: z.ZodSchema) {
-  const fn = async (args?: T, options: AIFunctionOptions = {}) => {
+export function createAIFunction<T extends z.ZodType>(schema: T) {
+  const fn = async (args?: z.infer<T>, options: AIFunctionOptions = {}) => {
     if (!args) {
-      return { schema: schema instanceof z.ZodType ? schema : z.object(schema) }
+      return { schema }
     }
 
     const { object } = await generateObject({
       model: options.model || DEFAULT_MODEL,
       schema,
       prompt: options.prompt || '',
-      ...options
+      ...options,
     })
 
-    return object as T
+    return object as z.infer<T>
   }
 
-  fn.schema = schema instanceof z.ZodType ? schema : z.object(schema)
+  fn.schema = schema
   return fn as AIFunction<T>
 }
 
@@ -33,7 +33,7 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
     const { text } = await generateText({
       model: options.model || DEFAULT_MODEL,
       prompt,
-      ...options
+      ...options,
     })
     return text
   }
@@ -43,7 +43,7 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
     return templateFn(currentPrompt)
   }
 
-  const asyncIterator = async function*() {
+  const asyncIterator = async function* () {
     if (!currentPrompt) {
       currentPrompt = ''
     }
@@ -51,7 +51,7 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
     const { textStream } = await streamText({
       model: options.model || DEFAULT_MODEL,
       prompt: currentPrompt,
-      ...options
+      ...options,
     })
 
     for await (const chunk of textStream) {
@@ -61,15 +61,12 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
 
   const createAsyncIterablePromise = <T>(promise: Promise<T>): AsyncIterablePromise<T> => {
     const asyncIterable = {
-      [Symbol.asyncIterator]: () => asyncIterator()
+      [Symbol.asyncIterator]: () => asyncIterator(),
     }
     return Object.assign(promise, asyncIterable) as AsyncIterablePromise<T>
   }
 
-  const baseFn = function(
-    stringsOrOptions?: TemplateStringsArray | AIFunctionOptions,
-    ...values: unknown[]
-  ): AsyncIterablePromise<string> {
+  const baseFn = function (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): AsyncIterablePromise<string> {
     if (!Array.isArray(stringsOrOptions)) {
       const opts = stringsOrOptions as AIFunctionOptions
       currentPrompt = opts.prompt || ''
@@ -82,11 +79,11 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
   } as BaseTemplateFunction
 
   Object.defineProperty(baseFn, Symbol.asyncIterator, {
-    value: function() {
+    value: function () {
       return asyncIterator()
     },
     writable: true,
-    configurable: true
+    configurable: true,
   })
 
   baseFn.withOptions = (opts?: AIFunctionOptions) => {

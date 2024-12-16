@@ -7,7 +7,7 @@ import { z } from 'zod'
  * - Word count constraints (e.g. "3-5 words") are enforced
  */
 export function createSchemaFromTemplate<T extends Record<string, string>>(
-  template: T
+  template: T,
 ): z.ZodObject<{
   [K in keyof T]: z.ZodString | z.ZodEnum<[string, ...string[]]> | z.ZodEffects<z.ZodString>
 }> {
@@ -19,7 +19,7 @@ export function createSchemaFromTemplate<T extends Record<string, string>>(
     if (value.includes('|')) {
       const options = value
         .split('|')
-        .map(opt => opt.trim())
+        .map((opt) => opt.trim())
         .filter(Boolean) // Remove empty strings
       if (options.length >= 1) {
         acc[key as keyof T] = z.enum([options[0], ...options.slice(1)] as [string, ...string[]]).describe(value)
@@ -43,8 +43,8 @@ export function createSchemaFromTemplate<T extends Record<string, string>>(
             },
             {
               message: `Must be between ${min} and ${max} words`,
-              params: { min, max }
-            }
+              params: { min, max },
+            },
           )
           .describe(value)
       } else {
