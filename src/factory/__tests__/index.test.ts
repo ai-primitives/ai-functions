@@ -29,12 +29,11 @@ const mockUsage = {
 
 describe('createAIFunction', () => {
   it('should return schema when called without args', async () => {
-    const fn = createAIFunction(
-      z.object({
-        productType: z.enum(['App', 'API', 'Marketplace']),
-        description: z.string().describe('website meta description'),
-      }),
-    )
+    const schema = z.object({
+      productType: z.enum(['App', 'API', 'Marketplace']),
+      description: z.string().describe('website meta description'),
+    })
+    const fn = createAIFunction(schema)
 
     const result = await fn()
     expect(result).toHaveProperty('schema')
@@ -42,10 +41,18 @@ describe('createAIFunction', () => {
   })
 
   it('should generate content when called with args', async () => {
-    const mockResult = {
-      productType: 'App' as const,
+    const schema = z.object({
+      productType: z.enum(['App', 'API', 'Marketplace']),
+      description: z.string().describe('website meta description'),
+    })
+    const fn = createAIFunction(schema)
+
+    type SchemaType = z.infer<typeof schema>
+    const mockResult: SchemaType = {
+      productType: 'App',
       description: 'A cool app',
     }
+
     const mockResponse: GenerateObjectResult<JSONValue> = {
       object: mockResult,
       usage: mockUsage,
@@ -66,13 +73,6 @@ describe('createAIFunction', () => {
         }),
     }
     vi.mocked(generateObject).mockResolvedValue(mockResponse)
-
-    const fn = createAIFunction(
-      z.object({
-        productType: z.enum(['App', 'API', 'Marketplace']),
-        description: z.string().describe('website meta description'),
-      }),
-    )
 
     const result = await fn({ productType: 'App', description: 'test' })
     expect(result).toEqual(mockResult)
