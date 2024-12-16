@@ -6,23 +6,25 @@ export interface AIFunctionOptions {
   prompt?: string
 }
 
-export type AIFunction<T extends Record<string, any> = Record<string, any>> = {
+export type AIFunction<T extends Record<string, unknown> = Record<string, unknown>> = {
   (): Promise<{ schema: z.ZodSchema }>
   (args: T): Promise<T>
   (args: T, options: AIFunctionOptions): Promise<T>
   schema?: z.ZodSchema
 }
 
-export interface BaseTemplateFunction extends AsyncIterable<string> {
-  (strings: TemplateStringsArray, ...values: any[]): Promise<string> | AsyncIterable<string>
-  (options?: AIFunctionOptions): Promise<string>
-  withOptions: (options?: AIFunctionOptions) => Promise<string>
+export type AsyncIterablePromise<T> = Promise<T> & AsyncIterable<string>
+
+export interface BaseTemplateFunction {
+  (strings: TemplateStringsArray, ...values: unknown[]): AsyncIterablePromise<string>
+  (options?: AIFunctionOptions): AsyncIterablePromise<string>
+  withOptions: (options?: AIFunctionOptions) => AsyncIterablePromise<string>
   [Symbol.asyncIterator](): AsyncIterator<string>
 }
 
 export type AITemplateFunction = BaseTemplateFunction & {
-  (strings: TemplateStringsArray, ...values: any[]): Promise<string>
-  withOptions: (options?: AIFunctionOptions) => Promise<string>
+  (strings: TemplateStringsArray, ...values: unknown[]): AsyncIterablePromise<string>
+  withOptions: (options?: AIFunctionOptions) => AsyncIterablePromise<string>
 }
 
 export interface AI extends AITemplateFunction {

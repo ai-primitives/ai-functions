@@ -1,44 +1,37 @@
-import { z } from 'zod'
-import { generateObject, generateText, streamText, LanguageModelV1 } from 'ai'
+import { generateText, streamText, generateObject } from 'ai'
 import { openai } from '@ai-sdk/openai'
-import { AIFunction, AIFunctionOptions, BaseTemplateFunction } from '../types'
-import { createSchemaFromTemplate } from '../utils/schema'
+import { z } from 'zod'
+import type { AIFunctionOptions, BaseTemplateFunction, AIFunction, AsyncIterablePromise } from '../types'
 
-const DEFAULT_MODEL: LanguageModelV1 = openai('gpt-4o')
+const DEFAULT_MODEL = openai('gpt-4o')
 
-export function createAIFunction<T extends Record<string, string>>(
-  template: T,
-  options: AIFunctionOptions = {}
-): AIFunction<{
-  [K in keyof T]: string
-}> {
-  const schema = createSchemaFromTemplate(template)
-
-  const fn = async (args?: Record<string, any>, fnOptions: AIFunctionOptions = {}) => {
+export function createAIFunction<T extends Record<string, unknown>>(schema: z.ZodSchema) {
+  const fn = async (args?: T, options: AIFunctionOptions = {}) => {
     if (!args) {
-      return { schema }
+      return { schema: schema instanceof z.ZodType ? schema : z.object(schema) }
     }
 
     const { object } = await generateObject({
-      model: DEFAULT_MODEL,
+      model: options.model || DEFAULT_MODEL,
       schema,
-      prompt: `Generate a response for: ${JSON.stringify(args)}`,
-      ...options,
-      ...fnOptions
+      prompt: options.prompt || '',
+      ...options
     })
 
-    return object
+    return object as T
   }
 
-  Object.assign(fn, { schema })
-
-  return fn as AIFunction<{ [K in keyof T]: string }>
+  fn.schema = schema instanceof z.ZodType ? schema : z.object(schema)
+  return fn as AIFunction<T>
 }
 
 export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTemplateFunction {
+  let currentPrompt: string | undefined
+
   const templateFn = async (prompt: string) => {
+    currentPrompt = prompt
     const { text } = await generateText({
-      model: DEFAULT_MODEL,
+      model: options.model || DEFAULT_MODEL,
       prompt,
       ...options
     })
@@ -46,48 +39,59 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
   }
 
   templateFn.withOptions = async (opts: AIFunctionOptions = {}) => {
-    return templateFn(opts.prompt || '')
+    currentPrompt = opts.prompt || ''
+    return templateFn(currentPrompt)
   }
 
-  let currentPrompt: string | undefined
+  const asyncIterator = async function*() {
+    if (!currentPrompt) {
+      currentPrompt = ''
+    }
 
-  const wrappedCall = (async function(
-    this: BaseTemplateFunction,
-    stringsOrOptions: TemplateStringsArray | AIFunctionOptions,
-    ...values: any[]
-  ): Promise<string> {
+    const { textStream } = await streamText({
+      model: options.model || DEFAULT_MODEL,
+      prompt: currentPrompt,
+      ...options
+    })
+
+    for await (const chunk of textStream) {
+      yield chunk
+    }
+  }
+
+  const createAsyncIterablePromise = <T>(promise: Promise<T>): AsyncIterablePromise<T> => {
+    const asyncIterable = {
+      [Symbol.asyncIterator]: () => asyncIterator()
+    }
+    return Object.assign(promise, asyncIterable) as AsyncIterablePromise<T>
+  }
+
+  const baseFn = function(
+    stringsOrOptions?: TemplateStringsArray | AIFunctionOptions,
+    ...values: unknown[]
+  ): AsyncIterablePromise<string> {
     if (!Array.isArray(stringsOrOptions)) {
       const opts = stringsOrOptions as AIFunctionOptions
-      currentPrompt = opts.prompt
-      return templateFn.withOptions(opts)
+      currentPrompt = opts.prompt || ''
+      return createAsyncIterablePromise(templateFn.withOptions(opts))
     }
 
     const prompt = String.raw({ raw: stringsOrOptions }, ...values)
     currentPrompt = prompt
-    return templateFn.withOptions({ prompt })
-  }) as unknown as BaseTemplateFunction
+    return createAsyncIterablePromise(templateFn(prompt))
+  } as BaseTemplateFunction
 
-  Object.defineProperty(wrappedCall, Symbol.asyncIterator, {
-    value: async function*() {
-      const prompt = currentPrompt || await this.withOptions()
-
-      const { textStream } = await streamText({
-        model: DEFAULT_MODEL,
-        prompt,
-        ...options
-      })
-
-      for await (const chunk of textStream) {
-        yield chunk
-      }
+  Object.defineProperty(baseFn, Symbol.asyncIterator, {
+    value: function() {
+      return asyncIterator()
     },
     writable: true,
     configurable: true
   })
 
-  Object.assign(wrappedCall, {
-    withOptions: templateFn.withOptions
-  })
+  baseFn.withOptions = (opts?: AIFunctionOptions) => {
+    return createAsyncIterablePromise(templateFn.withOptions(opts))
+  }
 
-  return wrappedCall
+  return baseFn
 }
