@@ -1,6 +1,6 @@
 {
-  "name": "package-template",
-  "version": "0.1.0",
+  "name": "ai-functions",
+  "version": "0.3.0",
   "description": "A modern TypeScript package template with Vitest, Prettier, ESLint, and semantic versioning",
   "type": "module",
   "main": "dist/index.js",
