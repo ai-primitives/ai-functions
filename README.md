@@ -179,7 +179,7 @@ Please read our [Contributing Guide](./CONTRIBUTING.md) to learn about our devel
 
 ## License
 
-MIT © [AI Primitives](https://mdx.org.ai)
+MIT © [Drivly](https://driv.ly)
 
 ## Dependencies
 
