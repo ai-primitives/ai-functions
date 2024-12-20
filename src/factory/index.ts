@@ -1,9 +1,14 @@
 import { generateText, streamText, generateObject } from 'ai'
 import { openai } from '@ai-sdk/openai'
+import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@ai-sdk/openai-compatible'
 import { z } from 'zod'
 import type { AIFunctionOptions, BaseTemplateFunction, AIFunction, AsyncIterablePromise } from '../types'
 
-const DEFAULT_MODEL = openai('gpt-4o')
+function getProvider() {
+  return process.env.AI_GATEWAY
+    ? createOpenAICompatible({ baseURL: process.env.AI_GATEWAY, name: 'openai' } satisfies OpenAICompatibleProviderSettings)
+    : openai
+}
 
 export function createAIFunction<T extends z.ZodType>(schema: T) {
   const fn = async (args?: z.infer<T>, options: AIFunctionOptions = {}) => {
@@ -12,7 +17,7 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
     }
 
     const { object } = await generateObject({
-      model: options.model || DEFAULT_MODEL,
+      model: options.model || getProvider()('gpt-4o'),
       schema,
       prompt: options.prompt || '',
       ...options,
@@ -27,6 +32,8 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
 
 export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTemplateFunction {
   let currentPrompt: string | undefined
+  const provider = getProvider()
+  const DEFAULT_MODEL = provider('gpt-4o')
 
   const templateFn = async (prompt: string) => {
     currentPrompt = prompt

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
 import {
   generateText,
@@ -12,12 +12,43 @@ import {
   type JSONValue,
 } from 'ai'
 import { createAIFunction, createTemplateFunction } from '../index'
+import { openai } from '@ai-sdk/openai'
+import { createOpenAICompatible, type OpenAICompatibleProvider } from '@ai-sdk/openai-compatible'
 
 // Mock the AI SDK functions
 vi.mock('ai', () => ({
   generateObject: vi.fn(),
-  generateText: vi.fn(),
+  generateText: vi.fn().mockResolvedValue({ text: 'mocked response' }),
   streamText: vi.fn(),
+}))
+
+// Mock OpenAI providers
+vi.mock('@ai-sdk/openai', () => ({
+  openai: vi.fn().mockImplementation((modelName: string) => ({
+    modelId: modelName,
+    provider: 'openai',
+    specificationVersion: 'v1',
+    maxTokens: 4096,
+    temperature: 0.7,
+    supportsStreaming: true,
+    tools: [],
+    toolChoice: 'none'
+  })),
+}))
+
+vi.mock('@ai-sdk/openai-compatible', () => ({
+  createOpenAICompatible: vi.fn().mockImplementation(() => {
+    return (modelName: string) => ({
+      modelId: modelName,
+      provider: 'openai-compatible',
+      specificationVersion: 'v1',
+      maxTokens: 4096,
+      temperature: 0.7,
+      supportsStreaming: true,
+      tools: [],
+      toolChoice: 'none'
+    })
+  }),
 }))
 
 // Mock usage data
@@ -194,4 +225,54 @@ describe('createTemplateFunction', () => {
 
     expect(collected).toEqual(chunks)
   })
+})
+
+describe('OpenAI provider integration', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.clearAllMocks()
+    delete process.env.AI_GATEWAY
+  })
+
+  it('should use custom baseURL when AI_GATEWAY is set', async () => {
+    process.env.AI_GATEWAY = 'https://custom-gateway.test'
+
+    const mockProvider = vi.fn().mockImplementation((modelName: string) => ({
+      modelId: modelName,
+      provider: 'openai-compatible',
+    })) as unknown as OpenAICompatibleProvider<string, string, string>
+
+    vi.mocked(createOpenAICompatible).mockReturnValue(mockProvider)
+
+    const fn = createTemplateFunction()
+    await fn`test prompt`
+
+    expect(createOpenAICompatible).toHaveBeenCalledWith({
+      baseURL: 'https://custom-gateway.test',
+      name: 'openai'
+    })
+    expect(mockProvider).toHaveBeenCalledWith('gpt-4o')
+  })
+
+  it('should use default OpenAI when AI_GATEWAY is not set', async () => {
+    const mockModel = {
+      modelId: 'mock-model',
+      provider: 'openai' as const,
+      specificationVersion: 'v1' as const,
+      maxTokens: 4096,
+      temperature: 0.7,
+      supportsStreaming: true,
+      tools: [] as const,
+      toolChoice: 'none' as const
+    } as unknown as LanguageModelV1
+
+    vi.mocked(openai).mockReturnValue(mockModel)
+
+    const fn = createTemplateFunction()
+    await fn`test prompt`
+
+    expect(createOpenAICompatible).not.toHaveBeenCalled()
+    expect(openai).toHaveBeenCalled()
+  })
+
 })

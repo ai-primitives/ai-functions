@@ -69,3 +69,4 @@
 - [ ] Implement prompt templating system
 - [ ] Add streaming progress indicators
 - [ ] Support for fine-tuned models
+Added @ai-sdk/openai-compatible dependency
