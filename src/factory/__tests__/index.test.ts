@@ -519,3 +519,5 @@ describe('OpenAI provider integration', () => {
       expect(result).toContain('<root>')
       expect(result).toContain('</root>')
     })
+  })
+})
