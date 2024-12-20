@@ -1,8 +1,10 @@
-import { LanguageModelV1, generateText, generateObject, type GenerateTextResult, type CoreTool } from 'ai'
+import { generateText, Output } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@ai-sdk/openai-compatible'
+import { ToolCall as CoreTool } from '@ai-sdk/provider-utils'
+import { LanguageModelV1 } from '@ai-sdk/provider'
 import { z } from 'zod'
-import type { AIFunctionOptions, BaseTemplateFunction, AIFunction, AsyncIterablePromise } from '../types'
+import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise } from '../types'
 
 function getProvider() {
   const gateway = process.env.AI_GATEWAY
@@ -27,14 +29,14 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
       return { schema }
     }
 
-    const { object } = await generateObject<z.infer<T>>({
-      model: options.model || getProvider()('gpt-4o'),
-      schema,
+    const result = await generateText({
+      model: getProvider()('gpt-4') as LanguageModelV1,
       prompt: options.prompt || '',
-      ...options,
+      maxRetries: 2,
+      experimental_output: Output.object({ schema: schema })
     })
 
-    return object as z.infer<T>
+    return result.experimental_output as z.infer<T>
   }
 
   fn.schema = schema
@@ -75,9 +77,12 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
 
   const asyncIterator = async function* (prompt: string) {
     currentPrompt = prompt
-    const result = await generateText<Record<string, CoreTool<any, any>>, { experimental_stream: AsyncIterable<string> }>({
+    const result = await generateText({
       model: options.model || DEFAULT_MODEL,
       prompt,
+      maxRetries: 2,
+      abortSignal: undefined,
+      headers: undefined,
       ...options,
       ...(options.outputFormat && {
         prompt: `${prompt}\n\nPlease format the response as ${options.outputFormat.toUpperCase()}${
@@ -85,16 +90,24 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
           options.outputFormat === 'csv' ? ' with headers' :
           options.outputFormat === 'xml' ? ' with a root element' : ''
         }`,
+        ...(options.outputFormat === 'json' && options.schema && {
+          experimental_output: Output.object({
+            schema: options.schema instanceof z.ZodType ? options.schema : z.object(options.schema as z.ZodRawShape)
+          })
+        })
       }),
     })
 
-    if ('experimental_stream' in result) {
-      const stream = result.experimental_stream as AsyncIterable<string>
-      for await (const chunk of stream) {
-        yield chunk
-      }
-    } else {
+    if (!result || typeof result !== 'object') {
+      throw new Error('Invalid response format')
+    }
+
+    if ('experimental_output' in result && options.outputFormat === 'json') {
+      yield JSON.stringify(result.experimental_output)
+    } else if ('text' in result) {
       yield result.text
+    } else {
+      throw new Error('No text available in response')
     }
   }
 
