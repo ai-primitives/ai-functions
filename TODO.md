@@ -6,40 +6,55 @@
   - [x] TypeScript configuration
   - [x] Testing setup with Vitest
   - [x] ESLint and Prettier configuration
-- [x] Template Literal API
-  - [x] Basic template literals (`ai\`prompt ${var}\``)
-  - [x] Config object support (`ai\`prompt ${var}\`({ model: 'model-name' })`)
-  - [x] Async iterator pattern (`for await (const chunk of ai\`prompt ${var}\`) { ... }`)
-- [x] List Generation API
-  - [x] Basic list generation
-  - [x] Async iterator support
-- [ ] AI Function Implementations
-  - [x] Product categorization
-  - [ ] Blog post generation (High Priority)
-    - [ ] Implement blog post generator function
-    - [ ] Add streaming support for long-form content
-    - [ ] Add proper error handling
-  - [ ] Custom function generation (Medium Priority)
-    - [ ] Implement function schema validation
-    - [ ] Add TypeScript type generation
-    - [ ] Support multiple language outputs
+
+## AI Function Implementation
+- [x] Basic template literal support (`ai\`prompt ${var}\``)
+- [x] Configuration object support (`ai\`prompt ${var}\`({ model: 'model-name' })`)
+- [x] Async iterator support (`for await (const chunk of ai\`prompt ${var}\`) { ... }`)
+- [ ] Core Infrastructure (High Priority)
+  - [ ] Template literal parser improvements
+  - [ ] Error handling for malformed templates
+  - [ ] Type inference for template variables
+- [ ] Provider Integration (High Priority)
+  - [ ] AI SDK integration layer
+  - [ ] Provider configuration management
+  - [ ] Response format standardization
 - [ ] Output Generation
   - [x] Basic object generation with schemas
   - [x] Array output with schemas
   - [x] Enum output support
   - [x] Unstructured output
   - [ ] Custom output formats (High Priority)
-    - [ ] Add JSON schema support
-    - [ ] Add XML output support
-    - [ ] Add CSV output support
+    - [ ] JSON schema support
+    - [ ] XML output support
+    - [ ] CSV output support
 - [ ] Streaming Support (High Priority)
   - [x] Object streaming
   - [x] Text streaming
   - [ ] Custom stream handlers
-    - [ ] Implement backpressure handling
-    - [ ] Add connection retry logic
-    - [ ] Support partial response processing
-    - [ ] Add progress event emitters
+    - [ ] Backpressure handling
+    - [ ] Connection retry logic
+    - [ ] Partial response processing
+    - [ ] Progress event emitters
+
+## Example Support
+Note: Blog post and product categorization are example use cases demonstrating library capabilities, not core implementations.
+
+### Blog Post Example Requirements
+- [ ] Long-form content generation support (High Priority)
+  - [ ] Streaming response handling
+  - [ ] Markdown format processing
+  - [ ] Content composition utilities
+  - [ ] Template variable interpolation
+  - [ ] Error handling for timeouts
+
+### Product Categorization Example Requirements
+- [ ] Structured output generation (Medium Priority)
+  - [ ] Zod schema validation
+  - [ ] Type-safe response handling
+  - [ ] Custom output formatting
+  - [ ] Validation error handling
+  - [ ] Schema documentation generation
 
 ## Documentation
 
@@ -58,28 +73,41 @@
 ## Testing
 
 - [x] Basic test setup
-- [ ] Comprehensive test coverage (High Priority)
-  - [ ] Template literal tests
-    - [ ] Test all configuration options
-    - [ ] Test error handling scenarios
-    - [ ] Test streaming edge cases
-  - [ ] List generation tests
-    - [ ] Test concurrent list generation
-    - [ ] Test list formatting options
-  - [ ] Object generation tests
-    - [ ] Test complex nested schemas
-    - [ ] Test validation error handling
-  - [ ] Streaming tests
-    - [ ] Test backpressure handling
-    - [ ] Test connection interruption
-    - [ ] Test partial response handling
-- [ ] Integration tests (Medium Priority)
-  - [ ] OpenAI integration
-    - [ ] Test all supported models
-    - [ ] Test rate limiting handling
-  - [ ] Custom provider integration
-    - [ ] Test Anthropic integration
-    - [ ] Test other provider compatibility
+- [ ] Core Template Features (High Priority)
+  - [ ] Basic template literal tests
+    - [ ] Test variable interpolation
+    - [ ] Test multiline templates
+    - [ ] Test error boundaries
+  - [ ] Configuration object tests
+    - [ ] Test model selection
+    - [ ] Test temperature settings
+    - [ ] Test response formats
+  - [ ] Async iterator tests
+    - [ ] Test streaming responses
+    - [ ] Test cancellation
+    - [ ] Test error propagation
+- [ ] Example Implementation Tests (Medium Priority)
+  - [ ] Blog post generation example tests
+    - [ ] Test markdown formatting
+    - [ ] Test content structure
+    - [ ] Test streaming chunks
+  - [ ] Product categorization example tests
+    - [ ] Test schema validation
+    - [ ] Test type inference
+    - [ ] Test error handling
+- [ ] Integration Tests (High Priority)
+  - [ ] AI provider integration tests
+    - [ ] Test provider switching
+    - [ ] Test rate limiting
+    - [ ] Test quota management
+  - [ ] Error handling tests
+    - [ ] Test network failures
+    - [ ] Test invalid responses
+    - [ ] Test timeout handling
+  - [ ] Performance benchmarks
+    - [ ] Response time metrics
+    - [ ] Memory usage tracking
+    - [ ] Streaming performance
 
 ## CI/CD
 
@@ -90,16 +118,14 @@
 
 ## Performance Optimization
 
-- [ ] Implement request batching (Medium Priority)
-  - [ ] Add queue management
-  - [ ] Add concurrent request limiting
-- [ ] Add caching layer (Low Priority)
-  - [ ] Implement LRU cache
-  - [ ] Add cache invalidation
-- [ ] Optimize streaming performance (High Priority)
-  - [ ] Implement proper backpressure handling
-  - [ ] Add connection pooling
-  - [ ] Optimize memory usage
+- [ ] Request Handling (High Priority)
+  - [ ] Connection pooling
+  - [ ] Rate limiting
+  - [ ] Retry logic
+- [ ] Response Processing (Medium Priority)
+  - [ ] Stream processing optimization
+  - [ ] Memory usage optimization
+  - [ ] Response caching
 
 ## Future Enhancements
 
