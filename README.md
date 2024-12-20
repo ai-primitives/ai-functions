@@ -30,6 +30,9 @@ import { ai, list } from 'ai-functions'
 // Simple text generation
 const text = ai`write a blog post in markdown starting with "# ${title}"`
 
+// Complex objects/arrays dumped to YAML
+const summary = ai`Summarize the itinerary: ${itinerary}`
+
 // Basic list generation
 const things = await list`fun things to do in Miami`
 console.log(things)
