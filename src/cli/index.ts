@@ -21,7 +21,7 @@ export function parseArgs(args: string[]): CliOptions {
 
 export function showHelp(): void {
   console.log(`
-Usage: package-template [options]
+Usage: ai-functions [options]
 
 Options:
   -v, --version  Show version number
