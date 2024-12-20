@@ -10,10 +10,9 @@ import {
   type LanguageModelV1,
   type CoreTool,
   type JSONValue,
-  type EmbeddingModel,
 } from 'ai'
 import { createAIFunction, createTemplateFunction } from '../index'
-import { openai, type OpenAIProvider } from '@ai-sdk/openai'
+import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProvider } from '@ai-sdk/openai-compatible'
 
 // Mock the AI SDK functions
