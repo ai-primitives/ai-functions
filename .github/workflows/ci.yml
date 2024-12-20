@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      AI_GATEWAY: ${{ secrets.AI_GATEWAY }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
