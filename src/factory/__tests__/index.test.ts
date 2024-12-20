@@ -23,6 +23,35 @@ vi.mock('ai', () => ({
   streamText: vi.fn(),
 }))
 
+// Mock OpenAI providers
+vi.mock('@ai-sdk/openai', () => ({
+  openai: vi.fn().mockImplementation((modelName: string) => ({
+    modelId: modelName,
+    provider: 'openai',
+    specificationVersion: 'v1',
+    maxTokens: 4096,
+    temperature: 0.7,
+    supportsStreaming: true,
+    tools: [],
+    toolChoice: 'none'
+  })),
+}))
+
+vi.mock('@ai-sdk/openai-compatible', () => ({
+  createOpenAICompatible: vi.fn().mockImplementation(() => {
+    return (modelName: string) => ({
+      modelId: modelName,
+      provider: 'openai-compatible',
+      specificationVersion: 'v1',
+      maxTokens: 4096,
+      temperature: 0.7,
+      supportsStreaming: true,
+      tools: [],
+      toolChoice: 'none'
+    })
+  }),
+}))
+
 // Mock usage data
 const mockUsage = {
   promptTokens: 10,
@@ -220,7 +249,8 @@ describe('OpenAI provider integration', () => {
     await fn`test prompt`
 
     expect(createOpenAICompatible).toHaveBeenCalledWith({
-      baseURL: 'https://custom-gateway.test'
+      baseURL: 'https://custom-gateway.test',
+      name: 'openai'
     })
     expect(mockProvider).toHaveBeenCalledWith('gpt-4o')
   })
@@ -228,7 +258,13 @@ describe('OpenAI provider integration', () => {
   it('should use default OpenAI when AI_GATEWAY is not set', async () => {
     const mockModel = {
       modelId: 'mock-model',
-      provider: 'openai',
+      provider: 'openai' as const,
+      specificationVersion: 'v1' as const,
+      maxTokens: 4096,
+      temperature: 0.7,
+      supportsStreaming: true,
+      tools: [] as const,
+      toolChoice: 'none' as const
     } as unknown as LanguageModelV1
 
     vi.mocked(openai).mockReturnValue(mockModel)
@@ -239,3 +275,5 @@ describe('OpenAI provider integration', () => {
     expect(createOpenAICompatible).not.toHaveBeenCalled()
     expect(openai).toHaveBeenCalled()
   })
+
+})
