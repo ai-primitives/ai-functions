@@ -1,4 +1,4 @@
-import { generateText, streamText, generateObject } from 'ai'
+import { LanguageModelV1, generateText, generateObject, type GenerateTextResult, type CoreTool } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@ai-sdk/openai-compatible'
 import { z } from 'zod'
@@ -27,7 +27,7 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
       return { schema }
     }
 
-    const { object } = await generateObject({
+    const { object } = await generateObject<z.infer<T>>({
       model: options.model || getProvider()('gpt-4o'),
       schema,
       prompt: options.prompt || '',
@@ -46,12 +46,24 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
   const provider = getProvider()
   const DEFAULT_MODEL = provider('gpt-4o')
 
+  // Validate output format if provided
+  if (options.outputFormat && !['json', 'xml', 'csv'].includes(options.outputFormat)) {
+    throw new Error('Invalid output format. Supported formats are: json, xml, csv')
+  }
+
   const templateFn = async (prompt: string) => {
     currentPrompt = prompt
     const { text } = await generateText({
       model: options.model || DEFAULT_MODEL,
       prompt,
       ...options,
+      ...(options.outputFormat && {
+        prompt: `${prompt}\n\nPlease format the response as ${options.outputFormat.toUpperCase()}${
+          options.schema ? ` following this schema:\n${JSON.stringify(options.schema, null, 2)}` :
+          options.outputFormat === 'csv' ? ' with headers' :
+          options.outputFormat === 'xml' ? ' with a root element' : ''
+        }`,
+      }),
     })
     return text
   }
@@ -61,25 +73,34 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
     return templateFn(currentPrompt)
   }
 
-  const asyncIterator = async function* () {
-    if (!currentPrompt) {
-      currentPrompt = ''
-    }
-
-    const { textStream } = await streamText({
+  const asyncIterator = async function* (prompt: string) {
+    currentPrompt = prompt
+    const result = await generateText<Record<string, CoreTool<any, any>>, { experimental_stream: AsyncIterable<string> }>({
       model: options.model || DEFAULT_MODEL,
-      prompt: currentPrompt,
+      prompt,
       ...options,
+      ...(options.outputFormat && {
+        prompt: `${prompt}\n\nPlease format the response as ${options.outputFormat.toUpperCase()}${
+          options.schema ? ` following this schema:\n${JSON.stringify(options.schema, null, 2)}` :
+          options.outputFormat === 'csv' ? ' with headers' :
+          options.outputFormat === 'xml' ? ' with a root element' : ''
+        }`,
+      }),
     })
 
-    for await (const chunk of textStream) {
-      yield chunk
+    if ('experimental_stream' in result) {
+      const stream = result.experimental_stream as AsyncIterable<string>
+      for await (const chunk of stream) {
+        yield chunk
+      }
+    } else {
+      yield result.text
     }
   }
 
   const createAsyncIterablePromise = <T>(promise: Promise<T>): AsyncIterablePromise<T> => {
     const asyncIterable = {
-      [Symbol.asyncIterator]: () => asyncIterator(),
+      [Symbol.asyncIterator]: () => asyncIterator(currentPrompt || ''),
     }
     return Object.assign(promise, asyncIterable) as AsyncIterablePromise<T>
   }
@@ -111,7 +132,7 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
 
   Object.defineProperty(baseFn, Symbol.asyncIterator, {
     value: function () {
-      return asyncIterator()
+      return asyncIterator(currentPrompt || '')
     },
     writable: true,
     configurable: true,

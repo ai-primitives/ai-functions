@@ -2,19 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
 import {
   generateText,
-  streamText,
-  generateObject,
   type GenerateTextResult,
-  type GenerateObjectResult,
-  type StreamTextResult,
   type LanguageModelV1,
   type CoreTool,
-  type JSONValue,
 } from 'ai'
 import { createAIFunction, createTemplateFunction } from '../index'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProvider } from '@ai-sdk/openai-compatible'
 import type { AIFunctionOptions } from '../../types'
+
+// Mock the AI SDK functions
+vi.mock('ai', () => ({
+  generateText: vi.fn(),
+}))
 
 // Mock the AI SDK functions
 vi.mock('ai', () => ({
@@ -307,4 +307,212 @@ describe('OpenAI provider integration', () => {
       expect(() => createTemplateFunction()).toThrow('OPENAI_API_KEY environment variable is required')
     })
   })
-})
+
+  describe('output format handling', () => {
+    beforeEach(() => {
+      vi.resetModules()
+      vi.clearAllMocks()
+      process.env.OPENAI_API_KEY = 'test-key'
+    })
+
+    it('should support JSON output format with schema', async () => {
+      const mockResponse: GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>> = {
+        text: '{"name": "Test", "value": 123}',
+        usage: mockUsage,
+        response: {
+          id: '1',
+          timestamp: new Date(),
+          modelId: 'test-model',
+          messages: [{ role: 'assistant' as const, content: '{"name": "Test", "value": 123}' }] as const,
+        },
+        finishReason: 'stop',
+        warnings: [],
+        request: {},
+        logprobs: undefined,
+        toolCalls: [],
+        toolResults: [],
+        steps: [],
+        experimental_output: {} as Record<string, unknown>,
+        experimental_providerMetadata: {},
+      }
+      vi.mocked(generateText).mockResolvedValue(mockResponse)
+
+      const fn = createTemplateFunction({
+        outputFormat: 'json',
+        schema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            value: { type: 'number' }
+          }
+        }
+      })
+      const result = await fn`Generate a test object`
+      expect(JSON.parse(result)).toEqual({ name: 'Test', value: 123 })
+      expect(generateText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: expect.stringContaining('JSON')
+        })
+      )
+    })
+
+    it('should support XML output format', async () => {
+      const mockResponse: GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>> = {
+        text: '<root><name>Test</name><value>123</value></root>',
+        usage: mockUsage,
+        response: {
+          id: '1',
+          timestamp: new Date(),
+          modelId: 'test-model',
+          messages: [{ role: 'assistant' as const, content: '<root><name>Test</name><value>123</value></root>' }] as const,
+        },
+        finishReason: 'stop',
+        warnings: [],
+        request: {},
+        logprobs: undefined,
+        toolCalls: [],
+        toolResults: [],
+        steps: [],
+        experimental_output: {} as Record<string, unknown>,
+        experimental_providerMetadata: {},
+      }
+      vi.mocked(generateText).mockResolvedValue(mockResponse)
+
+      const fn = createTemplateFunction({ outputFormat: 'xml' })
+      const result = await fn`Generate a test object`
+      expect(result).toContain('<root>')
+      expect(generateText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: expect.stringContaining('XML')
+        })
+      )
+    })
+
+    it('should support CSV output format', async () => {
+      const mockResponse: GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>> = {
+        text: 'name,value\nTest,123',
+        usage: mockUsage,
+        response: {
+          id: '1',
+          timestamp: new Date(),
+          modelId: 'test-model',
+          messages: [{ role: 'assistant' as const, content: 'name,value\nTest,123' }] as const,
+        },
+        finishReason: 'stop',
+        warnings: [],
+        request: {},
+        logprobs: undefined,
+        toolCalls: [],
+        toolResults: [],
+        steps: [],
+        experimental_output: {} as Record<string, unknown>,
+        experimental_providerMetadata: {},
+      }
+      vi.mocked(generateText).mockResolvedValue(mockResponse)
+
+      const fn = createTemplateFunction({ outputFormat: 'csv' })
+      const result = await fn`Generate a test object`
+      expect(result).toContain('name,value')
+      expect(generateText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: expect.stringContaining('CSV')
+        })
+      )
+    })
+
+    it('should throw on invalid output format', () => {
+      expect(() => createTemplateFunction({ outputFormat: 'invalid' as any }))
+        .toThrow('Invalid output format. Supported formats are: json, xml, csv')
+    })
+  })
+
+  describe('streaming support', () => {
+    beforeEach(() => {
+      vi.resetModules()
+      vi.clearAllMocks()
+      process.env.OPENAI_API_KEY = 'test-key'
+    })
+
+    it('should support streaming with JSON output format', async () => {
+      const mockStream = {
+        async *[Symbol.asyncIterator]() {
+          yield '{"name":'
+          yield ' "Test",'
+          yield ' "value":'
+          yield ' 123}'
+        }
+      }
+
+      const mockResponse = {
+        text: '{"name": "Test", "value": 123}',
+        usage: mockUsage,
+        response: {
+          id: '1',
+          timestamp: new Date(),
+          modelId: 'test-model',
+          messages: [{ role: 'assistant' as const, content: '{"name": "Test", "value": 123}' }] as const,
+        },
+        finishReason: 'stop',
+        warnings: [],
+        request: {},
+        logprobs: undefined,
+        toolCalls: [],
+        toolResults: [],
+        steps: [],
+        experimental_output: {} as Record<string, unknown>,
+        experimental_providerMetadata: {},
+        experimental_stream: mockStream,
+      } as GenerateTextResult<Record<string, CoreTool<any, any>>, { experimental_stream: AsyncIterable<string> }>
+
+      vi.mocked(generateText).mockResolvedValue(mockResponse)
+
+      const fn = createTemplateFunction({ outputFormat: 'json' })
+      const chunks: string[] = []
+      for await (const chunk of fn`Generate a test object`) {
+        chunks.push(chunk)
+      }
+      expect(JSON.parse(chunks.join(''))).toEqual({ name: 'Test', value: 123 })
+    })
+
+    it('should support streaming with XML output format', async () => {
+      const mockStream = {
+        async *[Symbol.asyncIterator]() {
+          yield '<root>'
+          yield '<name>Test</name>'
+          yield '<value>123</value>'
+          yield '</root>'
+        }
+      }
+
+      const mockResponse = {
+        text: '<root><name>Test</name><value>123</value></root>',
+        usage: mockUsage,
+        response: {
+          id: '1',
+          timestamp: new Date(),
+          modelId: 'test-model',
+          messages: [{ role: 'assistant' as const, content: '<root><name>Test</name><value>123</value></root>' }] as const,
+        },
+        finishReason: 'stop',
+        warnings: [],
+        request: {},
+        logprobs: undefined,
+        toolCalls: [],
+        toolResults: [],
+        steps: [],
+        experimental_output: {} as Record<string, unknown>,
+        experimental_providerMetadata: {},
+        experimental_stream: mockStream,
+      } as GenerateTextResult<Record<string, CoreTool<any, any>>, { experimental_stream: AsyncIterable<string> }>
+
+      vi.mocked(generateText).mockResolvedValue(mockResponse)
+
+      const fn = createTemplateFunction({ outputFormat: 'xml' })
+      const chunks: string[] = []
+      for await (const chunk of fn`Generate a test object`) {
+        chunks.push(chunk)
+      }
+      const result = chunks.join('')
+      expect(result).toContain('<root>')
+      expect(result).toContain('</root>')
+    })

@@ -4,6 +4,8 @@ import { LanguageModelV1 } from 'ai'
 export interface AIFunctionOptions {
   model?: LanguageModelV1
   prompt?: string
+  outputFormat?: 'json' | 'xml' | 'csv'
+  schema?: Record<string, unknown>
 }
 
 export type AIFunction<T extends z.ZodTypeAny = z.ZodTypeAny> = {
