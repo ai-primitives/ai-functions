@@ -1,9 +1,14 @@
 import { generateText, streamText, generateObject } from 'ai'
 import { openai } from '@ai-sdk/openai'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { z } from 'zod'
 import type { AIFunctionOptions, BaseTemplateFunction, AIFunction, AsyncIterablePromise } from '../types'
 
-const DEFAULT_MODEL = openai('gpt-4o')
+const provider = process.env.AI_GATEWAY
+  ? createOpenAICompatible({ baseURL: process.env.AI_GATEWAY })
+  : openai
+
+const DEFAULT_MODEL = provider('gpt-4o')
 
 export function createAIFunction<T extends z.ZodType>(schema: T) {
   const fn = async (args?: z.infer<T>, options: AIFunctionOptions = {}) => {
