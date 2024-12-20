@@ -74,10 +74,23 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
   }
 
   const baseFn = function (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): AsyncIterablePromise<string> {
+    // Add validation for required arguments
+    if (!stringsOrOptions) {
+      throw new Error('Template strings or options are required')
+    }
+
     if (!Array.isArray(stringsOrOptions)) {
       const opts = stringsOrOptions as AIFunctionOptions
+      if (typeof opts !== 'object' || opts === null) {
+        throw new Error('Options must be an object')
+      }
       currentPrompt = opts.prompt || ''
       return createAsyncIterablePromise(templateFn.withOptions(opts))
+    }
+
+    // Validate values match template slots
+    if (stringsOrOptions.length - 1 !== values.length) {
+      throw new Error('Template literal slots must match provided values')
     }
 
     const prompt = String.raw({ raw: stringsOrOptions }, ...values)
