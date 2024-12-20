@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
 import {
   generateText,
+  generateObject,
+  streamText,
   type GenerateTextResult,
+  type GenerateObjectResult,
+  type StreamTextResult,
+  type JSONValue,
   type LanguageModelV1,
   type CoreTool,
 } from 'ai'
@@ -443,7 +448,7 @@ describe('OpenAI provider integration', () => {
         }
       }
 
-      const mockResponse = {
+      const mockResponse: GenerateTextResult<Record<string, CoreTool<any, any>>, { experimental_stream: AsyncIterable<string> }> = {
         text: '{"name": "Test", "value": 123}',
         usage: mockUsage,
         response: {
@@ -459,10 +464,9 @@ describe('OpenAI provider integration', () => {
         toolCalls: [],
         toolResults: [],
         steps: [],
-        experimental_output: {} as Record<string, unknown>,
+        experimental_output: { experimental_stream: mockStream },
         experimental_providerMetadata: {},
-        experimental_stream: mockStream,
-      } as GenerateTextResult<Record<string, CoreTool<any, any>>, { experimental_stream: AsyncIterable<string> }>
+      }
 
       vi.mocked(generateText).mockResolvedValue(mockResponse)
 
@@ -484,7 +488,7 @@ describe('OpenAI provider integration', () => {
         }
       }
 
-      const mockResponse = {
+      const mockResponse: GenerateTextResult<Record<string, CoreTool<any, any>>, { experimental_stream: AsyncIterable<string> }> = {
         text: '<root><name>Test</name><value>123</value></root>',
         usage: mockUsage,
         response: {
@@ -500,10 +504,9 @@ describe('OpenAI provider integration', () => {
         toolCalls: [],
         toolResults: [],
         steps: [],
-        experimental_output: {} as Record<string, unknown>,
+        experimental_output: { experimental_stream: mockStream },
         experimental_providerMetadata: {},
-        experimental_stream: mockStream,
-      } as GenerateTextResult<Record<string, CoreTool<any, any>>, { experimental_stream: AsyncIterable<string> }>
+      }
 
       vi.mocked(generateText).mockResolvedValue(mockResponse)
 
