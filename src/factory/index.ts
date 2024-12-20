@@ -5,8 +5,19 @@ import { z } from 'zod'
 import type { AIFunctionOptions, BaseTemplateFunction, AIFunction, AsyncIterablePromise } from '../types'
 
 function getProvider() {
-  return process.env.AI_GATEWAY
-    ? createOpenAICompatible({ baseURL: process.env.AI_GATEWAY, name: 'openai' } satisfies OpenAICompatibleProviderSettings)
+  const gateway = process.env.AI_GATEWAY
+  const apiKey = process.env.OPENAI_API_KEY
+
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY environment variable is required')
+  }
+
+  // Use gateway if configured, otherwise use default OpenAI provider
+  return gateway
+    ? createOpenAICompatible({
+        baseURL: gateway,
+        name: 'openai'
+      } satisfies OpenAICompatibleProviderSettings)
     : openai
 }
 
