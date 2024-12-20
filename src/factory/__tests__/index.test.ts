@@ -14,11 +14,12 @@ import {
 import { createAIFunction, createTemplateFunction } from '../index'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProvider } from '@ai-sdk/openai-compatible'
+import type { AIFunctionOptions } from '../../types'
 
 // Mock the AI SDK functions
 vi.mock('ai', () => ({
   generateObject: vi.fn(),
-  generateText: vi.fn().mockResolvedValue({ text: 'mocked response' }),
+  generateText: vi.fn(),
   streamText: vi.fn(),
 }))
 
@@ -275,4 +276,35 @@ describe('OpenAI provider integration', () => {
     expect(openai).toHaveBeenCalled()
   })
 
+  describe('error handling', () => {
+    beforeEach(() => {
+      vi.resetModules()
+      vi.clearAllMocks()
+      process.env.OPENAI_API_KEY = 'test-key'
+    })
+
+    it('should throw on missing template strings', () => {
+      const fn = createTemplateFunction()
+      expect(() => fn()).toThrow('Template strings or options are required')
+    })
+
+    it('should throw on invalid options type', () => {
+      const fn = createTemplateFunction()
+      const invalidOptions = 'not an object' as unknown as AIFunctionOptions
+      expect(() => fn(invalidOptions)).toThrow('Options must be an object')
+    })
+
+    it('should throw on mismatched template values', () => {
+      const fn = createTemplateFunction()
+      const templateStrings = Object.assign(['test ', ' ', ' ', ''], {
+        raw: ['test ', ' ', ' ', '']
+      }) as TemplateStringsArray
+      expect(() => fn(templateStrings, 1, 2)).toThrow('Template literal slots must match provided values')
+    })
+
+    it('should throw on missing API key', () => {
+      delete process.env.OPENAI_API_KEY
+      expect(() => createTemplateFunction()).toThrow('OPENAI_API_KEY environment variable is required')
+    })
+  })
 })
