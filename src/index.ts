@@ -1,6 +1,6 @@
 import { createAIFunction, createTemplateFunction } from './factory'
 import { createListFunction } from './factory/list'
-import { AI, ListFunction, BaseTemplateFunction, AIFunctionOptions } from './types'
+import { AI, ListFunction, BaseTemplateFunction, AIFunctionOptions, TemplateResult } from './types'
 import { z } from 'zod'
 
 // Create the main template function with async iteration support
@@ -25,7 +25,7 @@ function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
 }
 
 function createWrappedTemplateFunction(baseFn: BaseTemplateFunction): BaseTemplateFunction {
-  const wrappedFn = function (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): Promise<string> {
+  const wrappedFn = function (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult {
     if (!isTemplateStringsArray(stringsOrOptions)) {
       return baseFn(values.shift() as TemplateStringsArray, ...values, stringsOrOptions)
     }
@@ -38,6 +38,19 @@ function createWrappedTemplateFunction(baseFn: BaseTemplateFunction): BaseTempla
       return baseFn[Symbol.asyncIterator]()
     },
     writable: true,
+    configurable: true,
+  })
+
+  // Add withOptions method
+  Object.defineProperty(wrappedFn, 'withOptions', {
+    value: (opts?: AIFunctionOptions) => baseFn.withOptions(opts),
+    writable: true,
+    configurable: true,
+  })
+
+  // Add queue property
+  Object.defineProperty(wrappedFn, 'queue', {
+    get: () => baseFn.queue,
     configurable: true,
   })
 

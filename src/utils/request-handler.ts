@@ -2,18 +2,6 @@ import type { RequestHandlingOptions } from '../types'
 import { AIRequestError } from '../types'
 import PQueue from 'p-queue'
 
-export interface RequestHandlingOptions {
-  maxRetries?: number
-  retryDelay?: number
-  timeout?: number
-  requestHandling?: {
-    maxRetries?: number
-    retryDelay?: number
-    timeout?: number
-  }
-  streamingTimeout?: number
-}
-
 export class RequestHandler {
   private retryOptions: {
     maxRetries: number
@@ -70,6 +58,9 @@ export class RequestHandler {
               chunks.push(chunk)
             }
             clearTimeout(timeoutId)
+            if (chunks.length === 0) {
+              throw new AIRequestError('No chunks received from stream')
+            }
             return chunks[chunks.length - 1]
           }
         } finally {
@@ -99,7 +90,7 @@ export class RequestHandler {
       }
     }
 
-    throw lastError
+    throw lastError || new AIRequestError('Operation failed with no error details')
   }
 
   async execute<T>(operation: () => Promise<T> | AsyncGenerator<T>, retryable = true, isStreaming = false): Promise<T> {

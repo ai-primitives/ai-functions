@@ -26,6 +26,11 @@ export interface RequestHandlingOptions {
   maxRetries?: number;
   retryDelay?: number;
   streamingTimeout?: number;
+  requestHandling?: {
+    retry?: RetryOptions;
+    rateLimit?: RateLimitOptions;
+    timeout?: number;
+  };
 }
 
 export interface StreamProgress {
@@ -71,20 +76,29 @@ export type AIFunction<T extends z.ZodTypeAny = z.ZodTypeAny> = {
   queue?: Queue
 }
 
-export type AsyncIterablePromise<T> = Promise<T> & AsyncIterable<string> & {
-  (options: AIFunctionOptions): Promise<T>
+export type AsyncIterablePromise<T> = Promise<T> & {
+  (options?: AIFunctionOptions): Promise<T>;
+  then: Promise<T>['then'];
+  catch: Promise<T>['catch'];
+  finally: Promise<T>['finally'];
+  [Symbol.asyncIterator]: () => AsyncIterator<string>;
 }
 
-export type TemplateResult = Promise<string> & AsyncIterable<string> & {
-  (options: AIFunctionOptions): Promise<string>
+export type TemplateResult = {
+  (options?: AIFunctionOptions): Promise<string>;
+  then: Promise<string>['then'];
+  catch: Promise<string>['catch'];
+  finally: Promise<string>['finally'];
+  [Symbol.asyncIterator]: () => AsyncIterator<string>;
+  call: (options?: AIFunctionOptions) => Promise<string>;
 }
 
 export interface BaseTemplateFunction {
-  <T extends unknown[]>(strings: TemplateStringsArray, ...values: T): TemplateResult
-  (options?: AIFunctionOptions): AsyncIterablePromise<string>
-  withOptions: (options?: AIFunctionOptions) => AsyncIterablePromise<string>
-  [Symbol.asyncIterator](): AsyncIterator<string>
-  queue?: Queue
+  (strings: TemplateStringsArray, ...values: unknown[]): TemplateResult;
+  (options?: AIFunctionOptions): TemplateResult;
+  [Symbol.asyncIterator]: () => AsyncIterator<string>;
+  withOptions: (options?: AIFunctionOptions) => Promise<string>;
+  queue?: Queue;
 }
 
 export type AITemplateFunction = BaseTemplateFunction & {

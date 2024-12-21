@@ -180,9 +180,9 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
             }
           } catch (error) {
             if (error instanceof Error) {
-              throw new Error(`Invalid JSON format: ${error.message}`)
+              throw new AIRequestError(`Invalid JSON format: ${error.message}`, error, false)
             }
-            throw new Error('Invalid JSON format')
+            throw new AIRequestError('Invalid JSON format', error, false)
           }
         }
 
@@ -194,7 +194,7 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
         })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
 
         if (!result) {
-          throw new Error('No result received from model')
+          throw new AIRequestError('No result received from model', undefined, false)
         }
 
         return result.text
@@ -202,7 +202,7 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
         if (error instanceof Error) {
           throw error
         }
-        throw new Error('Failed to generate text')
+        throw new AIRequestError('Failed to generate text', error, false)
       }
     }
 
@@ -216,12 +216,16 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
       if (error instanceof Error) {
         throw error
       }
-      throw new Error('Failed to generate text')
+      throw new AIRequestError('Failed to generate text', error, false)
     }
   }
 
-  const asyncIterator = async function* (prompt: string, options: AIFunctionOptions = defaultOptions): AsyncGenerator<string> {
-    currentPrompt = prompt
+  const asyncIterator = async function* (): AsyncIterator<string> {
+    if (!currentPrompt) {
+      return
+    }
+
+    const options = defaultOptions
     const modelParams = {
       temperature: options.temperature,
       maxTokens: options.maxTokens,
@@ -239,10 +243,8 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
     const executeRequest = async (): Promise<GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>> => {
       const result = (await generateText({
         model: options.model || openai('gpt-4o-mini'),
-        prompt,
+        prompt: currentPrompt,
         maxRetries: 2,
-        abortSignal: undefined,
-        headers: undefined,
         ...modelParams,
         ...options,
       })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
@@ -274,14 +276,9 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
           progressTracker.onComplete();
         }
         yield result.text
-      } else {
-        const errorMessage = 'Error: No result received';
-        progressTracker?.onChunk(errorMessage);
-        progressTracker?.onComplete();
-        yield errorMessage
       }
     } catch (error) {
-      const errorMessage = 'Error: Failed to generate text';
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate text';
       progressTracker?.onChunk(errorMessage);
       progressTracker?.onComplete();
       console.error('Error in asyncIterator:', error)
@@ -291,22 +288,27 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
 
   const createAsyncIterablePromise = <T extends string>(promise: Promise<T>, prompt: string, options: AIFunctionOptions = defaultOptions): AsyncIterablePromise<T> => {
     const asyncIterable = {
-      [Symbol.asyncIterator]: () => asyncIterator(prompt, options)
+      [Symbol.asyncIterator]: asyncIterator
     }
     const callablePromise = Object.assign(
-      (opts?: AIFunctionOptions): Promise<T> => {
+      async (opts?: AIFunctionOptions): Promise<T> => {
         if (!opts) return promise
         return templateFn(prompt, { ...options, ...opts }) as Promise<T>
       },
-      promise
+      {
+        then: (onfulfilled?: ((value: T) => T | PromiseLike<T>) | null | undefined, onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.then(onfulfilled, onrejected),
+        catch: (onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.catch(onrejected),
+        finally: (onfinally?: (() => void) | null | undefined): Promise<T> => promise.finally(onfinally),
+        [Symbol.asyncIterator]: asyncIterable[Symbol.asyncIterator]
+      }
     )
-    return Object.assign(callablePromise, asyncIterable) as AsyncIterablePromise<T>
+    return callablePromise as AsyncIterablePromise<T>
   }
 
   const baseFn = Object.assign(
-    (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): AsyncIterablePromise<string> => {
+    (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult => {
       if (!stringsOrOptions) {
-        return createAsyncIterablePromise(templateFn('', defaultOptions), '', defaultOptions)
+        return createAsyncIterablePromise(templateFn('', defaultOptions), '', defaultOptions) as TemplateResult
       }
 
       if (isTemplateStringsArray(stringsOrOptions)) {
@@ -324,20 +326,18 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
           : values
 
         const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
-        return createAsyncIterablePromise(templateFn(prompt, options), prompt, options)
+        return createAsyncIterablePromise(templateFn(prompt, options), prompt, options) as TemplateResult
       }
 
-      return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '', { ...defaultOptions, ...stringsOrOptions })
+      return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '', { ...defaultOptions, ...stringsOrOptions }) as TemplateResult
     },
     {
       withOptions: (opts: AIFunctionOptions = {}) => {
         const prompt = opts.prompt || currentPrompt || ''
         return templateFn(prompt, { ...defaultOptions, ...opts })
       },
-      [Symbol.asyncIterator]: (): AsyncIterator<string> => asyncIterator(currentPrompt || '', defaultOptions),
-      get queue() {
-        return queue
-      }
+      [Symbol.asyncIterator]: asyncIterator,
+      queue
     }
   ) as BaseTemplateFunction
 
