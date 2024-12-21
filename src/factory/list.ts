@@ -107,11 +107,11 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
           system: options.system,
           ...modelParams,
           signal: options.signal,
-          onChunk: ({ chunk }: { chunk: { type: string; text?: string } }) => {
-            if (chunk.type === 'text-delta' && options.streaming?.onProgress) {
-              options.streaming.onProgress(chunk.text || '')
+          onChunk: options.streaming?.onProgress ? ({ chunk }: { chunk: { type: string; text?: string } }) => {
+            if (chunk.type === 'text-delta' && chunk.text && options.streaming?.onProgress) {
+              options.streaming.onProgress(chunk.text)
             }
-          }
+          } : undefined
         }
 
         const { elementStream } = streamObject(streamOptions)
@@ -119,9 +119,6 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
         for await (const item of elementStream) {
           if (options.signal?.aborted) {
             throw new Error('Stream was aborted')
-          }
-          if (options.streaming?.onProgress) {
-            options.streaming.onProgress(item)
           }
           yield item
         }
@@ -180,7 +177,7 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
   function createTemplateResult(prompt: string, options: AIFunctionOptions): TemplateResult {
     const promise = templateFn(prompt, options)
 
-    // Create the base result object
+    // Create the base result object with async iterator
     const baseResult = {
       call: (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts }),
       then: (onfulfilled?: ((value: string) => string | PromiseLike<string>) | null | undefined) =>
@@ -188,7 +185,8 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
       catch: (onrejected?: ((reason: any) => string | PromiseLike<string>) | null | undefined) =>
         promise.catch(onrejected),
       finally: (onfinally?: (() => void) | null | undefined) =>
-        promise.finally(onfinally)
+        promise.finally(onfinally),
+      [Symbol.asyncIterator]: () => asyncIterator(prompt, options)
     }
 
     // Create a proxy that handles both function calls and async iteration
@@ -199,15 +197,18 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
       {
         get(target, prop, receiver) {
           if (prop === Symbol.asyncIterator) {
-            return () => executeStreamingRequest(prompt, options)
+            return () => asyncIterator(prompt, options)
           }
           return baseResult[prop as keyof typeof baseResult] ?? target[prop as keyof typeof target]
         }
       }
     ) as unknown as TemplateResult
 
-    // Make the result a promise
+    // Make the result a promise and ensure it has the async iterator
     Object.setPrototypeOf(result, Promise.prototype)
+    Object.assign(result, {
+      [Symbol.asyncIterator]: () => asyncIterator(prompt, options)
+    })
 
     return result
   }
@@ -236,7 +237,29 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
           const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
           currentPrompt = prompt
 
-          return createTemplateResult(prompt, options)
+          // Create a function that returns a promise and has async iterator
+          const templateResult = async function(opts?: AIFunctionOptions) {
+            return templateFn(prompt, { ...options, ...opts })
+          } as unknown as TemplateResult
+
+          // Add async iterator
+          Object.defineProperty(templateResult, Symbol.asyncIterator, {
+            value: () => asyncIterator(prompt, options),
+            writable: false,
+            enumerable: false,
+            configurable: true
+          })
+
+          // Add promise methods
+          const promise = templateFn(prompt, options)
+          Object.assign(templateResult, {
+            then: promise.then.bind(promise),
+            catch: promise.catch.bind(promise),
+            finally: promise.finally.bind(promise),
+            call: (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts })
+          })
+
+          return templateResult
         }
 
         const options = { ...defaultOptions, ...stringsOrOptions }

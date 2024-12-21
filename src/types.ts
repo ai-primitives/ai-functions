@@ -24,9 +24,14 @@ export type AIFunctionOptions = {
   }
 }
 
+export type TemplateResult = Promise<string> & {
+  call: (opts?: AIFunctionOptions) => Promise<string>
+  [Symbol.asyncIterator]: () => AsyncIterator<string>
+} & AsyncIterable<string>
+
 export type BaseTemplateFunction = {
-  (strings: TemplateStringsArray, ...values: any[]): Promise<string> & AsyncIterable<string>
-  withOptions: (options: AIFunctionOptions) => Promise<string> & AsyncIterable<string>
+  (strings: TemplateStringsArray, ...values: any[]): TemplateResult
+  withOptions: (options: AIFunctionOptions) => TemplateResult
 }
 
 export type AIFunction<T extends z.ZodType> = {
