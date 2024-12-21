@@ -22,6 +22,9 @@ dependencies:
     version: 3.24.1
 
 devDependencies:
+  '@ai-sdk/anthropic':
+    specifier: ^1.0.6
+    version: 1.0.6(zod@3.24.1)
   '@ai-sdk/provider':
     specifier: ^1.0.2
     version: 1.0.2
@@ -88,6 +91,17 @@ devDependencies:
 
 packages:
 
+  /@ai-sdk/anthropic@1.0.6(zod@3.24.1):
+    resolution: {integrity: sha512-/9f/CJfR+9rXRV55KSBExMCGeVV7QE5SlagLniak4j74t4/Zg1Aoa69AHftJ78rz/S5srvAB9YtTu52NY+E0mg==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.0.0
+    dependencies:
+      '@ai-sdk/provider': 1.0.3
+      '@ai-sdk/provider-utils': 2.0.5(zod@3.24.1)
+      zod: 3.24.1
+    dev: true
+
   /@ai-sdk/openai-compatible@0.0.9(zod@3.24.1):
     resolution: {integrity: sha512-CPTUtgbuuyEUE/wtilOLIqu9IiIs/uB35wl46a/acngGsX8v3q80+rnIginIUQe7cYVjpMgXxKZJCgxmwJqEUw==}
     engines: {node: '>=18'}
@@ -125,11 +139,34 @@ packages:
       secure-json-parse: 2.7.0
       zod: 3.24.1
 
+  /@ai-sdk/provider-utils@2.0.5(zod@3.24.1):
+    resolution: {integrity: sha512-2M7vLhYN0ThGjNlzow7oO/lsL+DyMxvGMIYmVQvEYaCWhDzxH5dOp78VNjJIVwHzVLMbBDigX3rJuzAs853idw==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+    dependencies:
+      '@ai-sdk/provider': 1.0.3
+      eventsource-parser: 3.0.0
+      nanoid: 3.3.8
+      secure-json-parse: 2.7.0
+      zod: 3.24.1
+    dev: true
+
   /@ai-sdk/provider@1.0.2:
     resolution: {integrity: sha512-YYtP6xWQyaAf5LiWLJ+ycGTOeBLWrED7LUrvc+SQIWhGaneylqbaGsyQL7VouQUeQ4JZ1qKYZuhmi3W56HADPA==}
     engines: {node: '>=18'}
     dependencies:
       json-schema: 0.4.0
+
+  /@ai-sdk/provider@1.0.3:
+    resolution: {integrity: sha512-WiuJEpHTrltOIzv3x2wx4gwksAHW0h6nK3SoDzjqCOJLu/2OJ1yASESTIX+f07ChFykHElVoP80Ol/fe9dw6tQ==}
+    engines: {node: '>=18'}
+    dependencies:
+      json-schema: 0.4.0
+    dev: true
 
   /@ai-sdk/react@1.0.6(react@18.3.1)(zod@3.24.1):
     resolution: {integrity: sha512-8Hkserq0Ge6AEi7N4hlv2FkfglAGbkoAXEZ8YSp255c3PbnZz6+/5fppw+aROmZMOfNwallSRuy1i/iPa2rBpQ==}
