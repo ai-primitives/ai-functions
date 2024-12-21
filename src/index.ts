@@ -12,7 +12,7 @@ const categorizeProduct = createAIFunction(
     customer: z.string().describe('ideal customer profile in 3-5 words'),
     solution: z.string().describe('describe the offer in 4-10 words'),
     description: z.string().describe('website meta description'),
-  })
+  }),
 )
 
 // Create the main AI object with template literal and async iteration support

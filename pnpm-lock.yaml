@@ -9,21 +9,33 @@ importers:
   .:
     dependencies:
       '@ai-sdk/openai':
-        specifier: ^1.0.8
+        specifier: ^1.0.10
         version: 1.0.10(zod@3.24.1)
       '@ai-sdk/openai-compatible':
         specifier: ^0.0.9
         version: 0.0.9(zod@3.24.1)
       ai:
-        specifier: ^4.0.18
+        specifier: ^4.0.20
         version: 4.0.20(react@18.3.1)(zod@3.24.1)
       zod:
         specifier: ^3.24.1
         version: 3.24.1
     devDependencies:
+      '@ai-sdk/provider':
+        specifier: ^1.0.2
+        version: 1.0.2
+      '@ai-sdk/provider-utils':
+        specifier: ^2.0.4
+        version: 2.0.4(zod@3.24.1)
+      '@ai-sdk/ui-utils':
+        specifier: ^1.0.5
+        version: 1.0.5(zod@3.24.1)
       '@eslint/js':
         specifier: ^9.17.0
         version: 9.17.0
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.0
       '@semantic-release/commit-analyzer':
         specifier: ^13.0.0
         version: 13.0.0(semantic-release@24.2.0(typescript@5.7.2))
@@ -57,9 +69,15 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.7.2
+      undici:
+        specifier: ^7.2.0
+        version: 7.2.0
       vitest:
         specifier: ^2.1.8
         version: 2.1.8(@types/node@22.10.2)
+      web-streams-polyfill:
+        specifier: ^4.0.0
+        version: 4.0.0
 
 packages:
 
@@ -1901,6 +1919,10 @@ packages:
   undici-types@6.20.0:
     resolution: {integrity: sha512-Ny6QZ2Nju20vw1SRHe3d9jVu6gJ+4e3+MMpqu7pqE5HT6WsTSlce++GQmK5UXS8mzV8DSYHrQH+Xrf2jVcuKNg==}
 
+  undici@7.2.0:
+    resolution: {integrity: sha512-klt+0S55GBViA9nsq48/NSCo4YX5mjydjypxD7UmHh/brMu8h/Mhd/F7qAeoH2NOO8SDTk6kjnTFc4WpzmfYpQ==}
+    engines: {node: '>=20.18.1'}
+
   unicode-emoji-modifier-base@1.0.0:
     resolution: {integrity: sha512-yLSH4py7oFH3oG/9K+XWrz1pSi3dfUrWEnInbxMfArOfc1+33BlGPQtLsOYwvdMy11AwUBetYuaRxSPqgkq+8g==}
     engines: {node: '>=4'}
@@ -2002,6 +2024,10 @@ packages:
         optional: true
       jsdom:
         optional: true
+
+  web-streams-polyfill@4.0.0:
+    resolution: {integrity: sha512-0zJXHRAYEjM2tUfZ2DiSOHAa2aw1tisnnhU3ufD57R8iefL+DcdJyRBRyJpG+NUimDgbTI/lH+gAE1PAvV3Cgw==}
+    engines: {node: '>= 8'}
 
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
@@ -3789,6 +3815,8 @@ snapshots:
 
   undici-types@6.20.0: {}
 
+  undici@7.2.0: {}
+
   unicode-emoji-modifier-base@1.0.0: {}
 
   unicorn-magic@0.1.0: {}
@@ -3881,6 +3909,8 @@ snapshots:
       - sugarss
       - supports-color
       - terser
+
+  web-streams-polyfill@4.0.0: {}
 
   which@2.0.2:
     dependencies:

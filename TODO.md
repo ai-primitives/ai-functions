@@ -8,39 +8,42 @@
   - [x] ESLint and Prettier configuration
 
 ## AI Function Implementation
+
 - [x] Basic template literal support (`ai\`prompt ${var}\``)
 - [x] Configuration object support (`ai\`prompt ${var}\`({ model: 'model-name' })`)
 - [x] Async iterator support (`for await (const chunk of ai\`prompt ${var}\`) { ... }`)
-- [ ] Core Infrastructure (High Priority)
-  - [ ] Template literal parser improvements
-  - [ ] Error handling for malformed templates
-  - [ ] Type inference for template variables
-- [ ] Provider Integration (High Priority)
-  - [ ] AI SDK integration layer
-  - [ ] Provider configuration management
-  - [ ] Response format standardization
+- [x] Core Infrastructure (High Priority)
+  - [x] Template literal parser improvements
+  - [x] Error handling for malformed templates
+  - [x] Type inference for template variables
+- [x] Provider Integration (High Priority)
+  - [x] AI SDK integration layer
+  - [x] Provider configuration management
+  - [x] Response format standardization
 - [ ] Output Generation
   - [x] Basic object generation with schemas
   - [x] Array output with schemas
   - [x] Enum output support
   - [x] Unstructured output
-  - [ ] Custom output formats (High Priority)
-    - [ ] JSON schema support
-    - [ ] XML output support
-    - [ ] CSV output support
-- [ ] Streaming Support (High Priority)
+  - [x] Custom output formats (High Priority)
+    - [x] JSON schema support
+    - [-] XML output support (removed)
+    - [-] CSV output support (removed)
+- [x] Streaming Support (High Priority)
   - [x] Object streaming
   - [x] Text streaming
-  - [ ] Custom stream handlers
-    - [ ] Backpressure handling
-    - [ ] Connection retry logic
-    - [ ] Partial response processing
-    - [ ] Progress event emitters
+  - [x] Custom stream handlers
+    - [x] Backpressure handling
+    - [x] Connection retry logic
+    - [x] Partial response processing
+    - [x] Progress event emitters
 
 ## Example Support
+
 Note: Blog post and product categorization are example use cases demonstrating library capabilities, not core implementations.
 
 ### Blog Post Example Requirements
+
 - [ ] Long-form content generation support (High Priority)
   - [ ] Streaming response handling
   - [ ] Markdown format processing
@@ -49,6 +52,7 @@ Note: Blog post and product categorization are example use cases demonstrating l
   - [ ] Error handling for timeouts
 
 ### Product Categorization Example Requirements
+
 - [ ] Structured output generation (Medium Priority)
   - [ ] Zod schema validation
   - [ ] Type-safe response handling
@@ -73,19 +77,19 @@ Note: Blog post and product categorization are example use cases demonstrating l
 ## Testing
 
 - [x] Basic test setup
-- [ ] Core Template Features (High Priority)
-  - [ ] Basic template literal tests
-    - [ ] Test variable interpolation
-    - [ ] Test multiline templates
-    - [ ] Test error boundaries
-  - [ ] Configuration object tests
-    - [ ] Test model selection
-    - [ ] Test temperature settings
-    - [ ] Test response formats
-  - [ ] Async iterator tests
-    - [ ] Test streaming responses
-    - [ ] Test cancellation
-    - [ ] Test error propagation
+- [x] Core Template Features (High Priority)
+  - [x] Basic template literal tests
+    - [x] Test variable interpolation
+    - [x] Test multiline templates
+    - [x] Test error boundaries
+  - [x] Configuration object tests
+    - [x] Test model selection
+    - [x] Test temperature settings
+    - [x] Test response formats
+  - [x] Async iterator tests
+    - [x] Test streaming responses
+    - [x] Test cancellation
+    - [x] Test error propagation
 - [ ] Example Implementation Tests (Medium Priority)
   - [ ] Blog post generation example tests
     - [ ] Test markdown formatting
@@ -135,4 +139,4 @@ Note: Blog post and product categorization are example use cases demonstrating l
 - [ ] Implement prompt templating system
 - [ ] Add streaming progress indicators
 - [ ] Support for fine-tuned models
-Added @ai-sdk/openai-compatible dependency
+      Added @ai-sdk/openai-compatible dependency

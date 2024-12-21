@@ -41,7 +41,11 @@
     "url": "https://github.com/ai-primitives/ai-functions/issues"
   },
   "devDependencies": {
+    "@ai-sdk/provider": "^1.0.2",
+    "@ai-sdk/provider-utils": "^2.0.4",
+    "@ai-sdk/ui-utils": "^1.0.5",
     "@eslint/js": "^9.17.0",
+    "@opentelemetry/api": "^1.9.0",
     "@semantic-release/commit-analyzer": "^13.0.0",
     "@semantic-release/github": "^11.0.1",
     "@semantic-release/npm": "^12.0.1",
@@ -53,12 +57,14 @@
     "prettier": "^3.4.2",
     "semantic-release": "^24.2.0",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "undici": "^7.2.0",
+    "vitest": "^2.1.8",
+    "web-streams-polyfill": "^4.0.0"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^1.0.8",
+    "@ai-sdk/openai": "^1.0.10",
     "@ai-sdk/openai-compatible": "^0.0.9",
-    "ai": "^4.0.18",
+    "ai": "^4.0.20",
     "zod": "^3.24.1"
   }
 }
