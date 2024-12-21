@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ai } from './index'
 import { z } from 'zod'
 import type { AIFunctionOptions } from './types'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
 describe('ai template tag', () => {
   it('should support basic template literals', async () => {
@@ -13,7 +14,9 @@ describe('ai template tag', () => {
   it('should support configuration object', async () => {
     const name = 'World'
     const config: AIFunctionOptions = {
-      model: 'gpt-3.5-turbo',
+      model: createOpenAICompatible({
+        model: 'gpt-3.5-turbo',
+      }),
     }
     const result = await ai`Hello ${name}${config}`
     expect(typeof result).toBe('string')
