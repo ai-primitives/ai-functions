@@ -9,12 +9,24 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
   const templateFn = async (prompt: string, options: AIFunctionOptions = defaultOptions) => {
     currentPrompt = prompt
 
+    const modelParams = {
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      topP: options.topP,
+      frequencyPenalty: options.frequencyPenalty,
+      presencePenalty: options.presencePenalty,
+      stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+      seed: options.seed,
+      system: options.system,
+    }
+
     // Generate a list using streamObject with array output
     const { elementStream } = streamObject({
       model: options.model || openai('gpt-4o-mini'),
       output: 'array',
       schema: z.string(),
       prompt: `Generate a list of items based on this prompt: ${prompt}`,
+      ...modelParams,
     })
 
     // Collect all elements
@@ -29,11 +41,23 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
 
   const asyncIterator = async function* (prompt: string) {
     currentPrompt = prompt
+    const modelParams = {
+      temperature: defaultOptions.temperature,
+      maxTokens: defaultOptions.maxTokens,
+      topP: defaultOptions.topP,
+      frequencyPenalty: defaultOptions.frequencyPenalty,
+      presencePenalty: defaultOptions.presencePenalty,
+      stopSequences: defaultOptions.stop ? Array.isArray(defaultOptions.stop) ? defaultOptions.stop : [defaultOptions.stop] : undefined,
+      seed: defaultOptions.seed,
+      system: defaultOptions.system,
+    }
+
     const { elementStream } = streamObject({
       model: defaultOptions.model || openai('gpt-4o-mini'),
       output: 'array',
       schema: z.string(),
       prompt: `Generate a list of items based on this prompt: ${prompt}`,
+      ...modelParams,
     })
 
     // Yield each item individually for streaming
@@ -49,43 +73,36 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
     return Object.assign(promise, asyncIterable) as AsyncIterablePromise<T>
   }
 
-  const baseFn = (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): AsyncIterablePromise<string> => {
-    if (!stringsOrOptions) {
-      return createAsyncIterablePromise(templateFn('', defaultOptions), '')
-    }
-
-    if (Array.isArray(stringsOrOptions)) {
-      const strings = stringsOrOptions as TemplateStringsArray
-      if (strings.length - 1 !== values.length) {
-        throw new Error('Template literal slots must match provided values')
+  const baseFn = Object.assign(
+    (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): AsyncIterablePromise<string> => {
+      if (!stringsOrOptions) {
+        return createAsyncIterablePromise(templateFn('', defaultOptions), '')
       }
 
-      const prompt = strings.reduce((acc, str, i) => acc + str + (values[i] || ''), '')
-      return createAsyncIterablePromise(templateFn(prompt, defaultOptions), prompt)
+      if (Array.isArray(stringsOrOptions)) {
+        const strings = stringsOrOptions as TemplateStringsArray
+        if (strings.length - 1 !== values.length) {
+          throw new Error('Template literal slots must match provided values')
+        }
+
+        const lastValue = values[values.length - 1]
+        const options = typeof lastValue === 'object' && !Array.isArray(lastValue) ? lastValue as AIFunctionOptions : defaultOptions
+        values = typeof lastValue === 'object' && !Array.isArray(lastValue) ? values.slice(0, -1) : values
+        
+        const prompt = strings.reduce((acc, str, i) => acc + str + (values[i] || ''), '')
+        return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...options }), prompt)
+      }
+
+      return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '')
+    },
+    {
+      withOptions: (opts: AIFunctionOptions = {}) => {
+        const prompt = opts.prompt || currentPrompt || ''
+        return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...opts }), prompt)
+      },
+      [Symbol.asyncIterator]: (): AsyncIterator<string> => asyncIterator(currentPrompt || '')
     }
+  ) as BaseTemplateFunction
 
-    return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '')
-  }
-
-  // Add support for calling with options after template literal
-  const templateLiteralWithOptions = (strings: TemplateStringsArray, ...values: unknown[]) => {
-    return (options: AIFunctionOptions = {}) => {
-      const prompt = strings.reduce((acc, str, i) => acc + str + (values[i] || ''), '')
-      return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...options }), prompt)
-    }
-  }
-
-  // Attach the template literal handler
-  Object.defineProperty(baseFn, 'call', {
-    value: templateLiteralWithOptions
-  })
-
-  baseFn.withOptions = (opts: AIFunctionOptions = {}) => {
-    const prompt = opts.prompt || currentPrompt || ''
-    return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...opts }), prompt)
-  }
-
-  baseFn[Symbol.asyncIterator] = () => asyncIterator(currentPrompt || '')
-
-  return baseFn as BaseTemplateFunction & { call: typeof templateLiteralWithOptions }
+  return baseFn
 } 

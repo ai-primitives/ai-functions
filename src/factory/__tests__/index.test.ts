@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { z } from 'zod'
 import { createTemplateFunction, createAIFunction } from '../index'
+import { createListFunction } from '../list'
 import type { AIFunctionOptions } from '../../types'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
@@ -189,5 +190,46 @@ describe('createTemplateFunction', () => {
     const result1 = await fn.withOptions({ seed: 42, prompt })
     const result2 = await fn.withOptions({ seed: 42, prompt })
     expect(result1).toBe(result2)
+  })
+
+  it('should support system parameter', async () => {
+    const fn = createTemplateFunction()
+    const result = await fn.withOptions({
+      system: 'You are a helpful assistant that speaks in a formal tone.',
+      prompt: 'Tell me about AI'
+    })
+    expect(result).toBeDefined()
+    expect(typeof result).toBe('string')
+  })
+
+  it('should support system parameter in JSON output', async () => {
+    const fn = createTemplateFunction()
+    const result = await fn.withOptions({
+      outputFormat: 'json',
+      schema: {
+        title: 'string',
+        content: 'string'
+      },
+      system: 'You are a helpful assistant that speaks in a formal tone.',
+      prompt: 'Write an article about AI'
+    })
+    expect(result).toBeDefined()
+    const parsed = JSON.parse(result)
+    expect(parsed).toHaveProperty('title')
+    expect(parsed).toHaveProperty('content')
+    expect(typeof parsed.title).toBe('string')
+    expect(typeof parsed.content).toBe('string')
+  })
+
+  it('should support system parameter in list function', async () => {
+    const list = createListFunction()
+    const result = await list.withOptions({
+      system: 'You are a helpful assistant that provides concise, one-word answers.',
+      prompt: 'List 3 programming languages'
+    })
+    expect(result).toBeDefined()
+    const items = result.split('\n')
+    expect(items.length).toBe(3)
+    items.forEach((item: string) => expect(item.split(' ').length).toBe(1))
   })
 })

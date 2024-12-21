@@ -24,7 +24,10 @@ describe('createListFunction', () => {
 
   it('should support configuration options', async () => {
     const list = createListFunction()
-    const result = await list.call`fun things to do in Miami`({ model })
+    const result = await list.withOptions({
+      model,
+      prompt: 'fun things to do in Miami'
+    })
     expect(result).toBeDefined()
     expect(typeof result).toBe('string')
     expect(result.split('\n').length).toBeGreaterThan(0)

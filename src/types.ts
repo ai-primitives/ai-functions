@@ -7,7 +7,7 @@ export interface AIFunctionOptions {
   outputFormat?: 'json'
   schema?: z.ZodType | Record<string, unknown>
   structuredOutputs?: boolean
-  systemMessage?: string
+  system?: string
   temperature?: number
   maxTokens?: number
   topP?: number

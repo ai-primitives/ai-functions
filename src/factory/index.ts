@@ -46,6 +46,14 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
       prompt: options.prompt || '',
       maxRetries: 2,
       experimental_output: Output.object({ schema: schema }),
+      system: options.system,
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      topP: options.topP,
+      frequencyPenalty: options.frequencyPenalty,
+      presencePenalty: options.presencePenalty,
+      stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+      seed: options.seed,
     })
 
     if (!result.experimental_output) {
@@ -111,6 +119,7 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
       presencePenalty: options.presencePenalty,
       stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
       seed: options.seed,
+      system: options.system,
     }
     
     if (options.outputFormat === 'json') {
@@ -167,6 +176,7 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
       presencePenalty: defaultOptions.presencePenalty,
       stopSequences: defaultOptions.stop ? Array.isArray(defaultOptions.stop) ? defaultOptions.stop : [defaultOptions.stop] : undefined,
       seed: defaultOptions.seed,
+      system: defaultOptions.system,
     }
 
     const result = await generateText({
