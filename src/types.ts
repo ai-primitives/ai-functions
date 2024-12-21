@@ -33,6 +33,22 @@ export interface RequestHandlingOptions {
   timeout?: number;
 }
 
+export interface StreamProgress {
+  type: 'token' | 'chunk' | 'complete';
+  tokensGenerated?: number;
+  totalTokens?: number;
+  chunk?: string;
+  estimatedTimeRemaining?: number;
+}
+
+export type ProgressCallback = (progress: StreamProgress) => void;
+
+export interface StreamingOptions {
+  onProgress?: ProgressCallback;
+  enableTokenCounting?: boolean;
+  estimateTimeRemaining?: boolean;
+}
+
 export interface AIFunctionOptions {
   model?: LanguageModelV1
   prompt?: string
@@ -49,6 +65,7 @@ export interface AIFunctionOptions {
   seed?: number
   concurrency?: ConcurrencyOptions
   requestHandling?: RequestHandlingOptions;
+  streaming?: StreamingOptions;
 }
 
 export type AIFunction<T extends z.ZodTypeAny = z.ZodTypeAny> = {

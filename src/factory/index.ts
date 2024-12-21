@@ -7,6 +7,7 @@ import { z } from 'zod'
 import PQueue from 'p-queue'
 import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue } from '../types'
 import { createRequestHandler } from '../utils/request-handler';
+import { StreamProgressTracker } from '../utils/stream-progress';
 
 // PLACEHOLDER: imports and type definitions
 
@@ -215,6 +216,9 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
       system: defaultOptions.system,
     }
 
+    const progressTracker = defaultOptions.streaming ? 
+      new StreamProgressTracker(defaultOptions.streaming) : undefined;
+
     const executeRequest = async (): Promise<GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>> => {
       const result = (await generateText({
         model: defaultOptions.model || openai('gpt-4o-mini'),
@@ -241,16 +245,30 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
 
       if (isStreamingResult(result)) {
         for await (const chunk of result.experimental_stream) {
+          if (progressTracker) {
+            progressTracker.onChunk(chunk);
+          }
           yield chunk
         }
+        progressTracker?.onComplete();
       } else if (result) {
+        if (progressTracker) {
+          progressTracker.onChunk(result.text);
+          progressTracker.onComplete();
+        }
         yield result.text
       } else {
-        yield 'Error: No result received'
+        const errorMessage = 'Error: No result received';
+        progressTracker?.onChunk(errorMessage);
+        progressTracker?.onComplete();
+        yield errorMessage
       }
     } catch (error) {
+      const errorMessage = 'Error: Failed to generate text';
+      progressTracker?.onChunk(errorMessage);
+      progressTracker?.onComplete();
       console.error('Error in asyncIterator:', error)
-      yield 'Error: Failed to generate text'
+      yield errorMessage
     }
   }
 
