@@ -6,26 +6,14 @@ import { Response } from 'undici'
 import { z } from 'zod'
 import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise } from '../types'
 
-function getProvider() {
-  const gateway = process.env.AI_GATEWAY
-  const apiKey = process.env.OPENAI_API_KEY
-
-  if (!apiKey) {
-    throw new Error('OPENAI_API_KEY environment variable is required')
-  }
-
-  // Use gateway if configured, otherwise use default OpenAI provider
-  return gateway
-    ? createOpenAICompatible({
-        baseURL: gateway,
-        name: 'openai',
-      } satisfies OpenAICompatibleProviderSettings)
-    : openai
-}
+// PLACEHOLDER: imports and type definitions
 
 export type GenerateResult = GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
 
-export type GenerateJsonResult = GenerateObjectResult<Record<string, unknown>>
+export type GenerateJsonResult = GenerateResult & {
+  object: JSONValue
+  toJsonResponse: () => Response
+}
 
 export type StreamingResult = GenerateResult & {
   experimental_stream: AsyncIterable<string>
@@ -45,21 +33,7 @@ export function isJsonResult(result: GenerateResult): result is GenerateJsonResu
   return 'object' in result && 'toJsonResponse' in result
 }
 
-export function createJsonResponse(result: GenerateJsonResult): Response {
-  return result.toJsonResponse()
-}
-
-export function createStreamResponse(result: StreamingResult): Response {
-  return new Response(result.experimental_stream as unknown as ReadableStream, {
-    headers: { 'Content-Type': 'text/plain' },
-  })
-}
-
-export function createTextResponse(result: GenerateResult): Response {
-  return new Response(result.text, {
-    headers: { 'Content-Type': 'text/plain' },
-  })
-}
+// PLACEHOLDER: response creation functions
 
 export function createAIFunction<T extends z.ZodType>(schema: T) {
   const fn = async (args?: z.infer<T>, options: AIFunctionOptions = {}) => {
@@ -85,12 +59,45 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
   return fn as AIFunction<T>
 }
 
+// PLACEHOLDER: createTemplateFunction implementation
+
+function getProvider() {
+  const gateway = process.env.AI_GATEWAY
+  const apiKey = process.env.OPENAI_API_KEY
+
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY environment variable is required')
+  }
+
+  return gateway
+    ? createOpenAICompatible({
+        baseURL: gateway,
+        name: 'openai',
+      } satisfies OpenAICompatibleProviderSettings)
+    : openai
+}
+
+export function createJsonResponse(result: GenerateJsonResult): Response {
+  return result.toJsonResponse()
+}
+
+export function createStreamResponse(result: StreamingResult): Response {
+  return new Response(result.experimental_stream as unknown as ReadableStream, {
+    headers: { 'Content-Type': 'text/plain' },
+  })
+}
+
+export function createTextResponse(result: GenerateResult): Response {
+  return new Response(result.text, {
+    headers: { 'Content-Type': 'text/plain' },
+  })
+}
+
 export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTemplateFunction {
   let currentPrompt: string | undefined
   const provider = getProvider()
   const DEFAULT_MODEL = provider('gpt-4')
 
-  // Validate output format if provided
   if (options.outputFormat && options.outputFormat !== 'json') {
     throw new Error('Invalid output format. Only JSON is supported')
   }
