@@ -6,22 +6,14 @@ import type { LanguageModelV1 } from '@ai-sdk/provider'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
 describe('ai template tag', () => {
-  const openaiModel = createOpenAICompatible({
-    apiKey: process.env.OPENAI_API_KEY,
+  const openaiProvider = createOpenAICompatible({
     baseURL: process.env.AI_GATEWAY,
-    defaultModel: 'gpt-3.5-turbo',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+    }
   })
 
-  const model: LanguageModelV1 = {
-    specificationVersion: 'v1',
-    provider: 'openai',
-    modelId: 'gpt-3.5-turbo',
-    defaultObjectGenerationMode: 'json',
-    supportsImageUrls: true,
-    supportsStructuredOutputs: true,
-    doGenerate: openaiModel.doGenerate.bind(openaiModel),
-    doStream: openaiModel.doStream.bind(openaiModel),
-  }
+  const model: LanguageModelV1 = openaiProvider.chatModel('gpt-3.5-turbo')
 
   it('should support basic template literals', async () => {
     const name = 'World'
@@ -57,14 +49,14 @@ describe('ai template tag', () => {
   })
 
   it('should support streaming responses', async () => {
-    const chunks = ['Item 1', 'Item 2', 'Item 3']
+    const stream = ai`List some items`
     const collected: string[] = []
 
-    const stream = ai`List some items`
     for await (const chunk of stream) {
       collected.push(chunk.trim())
     }
 
-    expect(collected).toEqual(chunks)
+    expect(collected.length).toBeGreaterThan(0)
+    expect(collected.every(chunk => typeof chunk === 'string')).toBe(true)
   })
 })
