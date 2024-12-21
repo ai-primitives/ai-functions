@@ -3,12 +3,12 @@ import { Response } from 'undici'
 
 export type MockGenerateTextResult = GenerateTextResult<
   Record<string, CoreTool<any, any>>,
-  Record<string, unknown>
+  JSONValue
 >
 
 export type MockGenerateObjectResult = GenerateTextResult<
   Record<string, CoreTool<any, any>>,
-  Record<string, unknown>
+  JSONValue
 > & {
   object: JSONValue
   toJsonResponse: () => Response
@@ -30,7 +30,7 @@ export const createMockTextResponse = (text: string): MockGenerateTextResult => 
   toolCalls: [],
   toolResults: [],
   steps: [],
-  experimental_output: null as JSONValue,
+  experimental_output: null,
   experimental_providerMetadata: {},
 })
 
