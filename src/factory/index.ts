@@ -1,4 +1,4 @@
-import { generateText, streamText, generateObject, Output, type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
+import { generateText, streamText, generateObject, Output, type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool, type CallSettings, type Prompt, type TelemetrySettings, type LanguageModelV1ProviderMetadata } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@ai-sdk/openai-compatible'
 import { LanguageModelV1 } from '@ai-sdk/provider'
@@ -90,7 +90,7 @@ function getProvider() {
     throw new Error('OPENAI_API_KEY environment variable is required')
   }
 
-  return gateway
+  const provider = gateway
     ? createOpenAICompatible({
         baseURL: gateway,
         name: 'openai',
@@ -100,6 +100,9 @@ function getProvider() {
         }
       } satisfies OpenAICompatibleProviderSettings)
     : openai
+
+  return (model: string, options?: { structuredOutputs?: boolean }) => 
+    provider(model, { structuredOutputs: options?.structuredOutputs ?? false })
 }
 
 export function createJsonResponse(result: GenerateJsonResult): Response {
@@ -157,10 +160,12 @@ export function createTemplateFunction(): BaseTemplateFunction {
           }
 
           const result = await generateText({
-            model,
-            prompt: `You must respond with a valid JSON object. ${prompt}`,
+            model: options.model || getProvider()('gpt-4o-mini', { structuredOutputs: true }),
+            prompt,
             experimental_output: Output.object({ schema }),
-            system: options.system ? `${options.system} You must respond with valid JSON.` : 'You must respond with valid JSON.',
+            system: options.system ? 
+              `${options.system}\nYou must respond with valid JSON that matches the schema. Do not include any additional text or explanation. Only output the JSON object.` : 
+              'You must respond with valid JSON that matches the schema. Do not include any additional text or explanation. Only output the JSON object.',
             temperature: options.temperature ?? 0,
             maxTokens: options.maxTokens,
             topP: options.topP ?? 1,
@@ -168,13 +173,25 @@ export function createTemplateFunction(): BaseTemplateFunction {
             presencePenalty: options.presencePenalty ?? 0,
             stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
             seed: options.seed,
+            experimental_providerMetadata: {
+              openai: {
+                response_format: { type: 'json_object' }
+              }
+            }
           })
 
           if (!result.experimental_output) {
             throw new AIRequestError('No output received from model', undefined, true)
           }
 
-          return JSON.stringify(result.experimental_output)
+          // Validate against schema before returning
+          try {
+            const output = result.experimental_output
+            schema.parse(output)
+            return JSON.stringify(output, null, 2)
+          } catch (error) {
+            throw new AIRequestError('Model output did not match schema', error, true)
+          }
         })
         
         const templateResult = Object.create(Promise.resolve(result), {

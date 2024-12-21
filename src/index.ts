@@ -14,147 +14,36 @@ function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
   return Array.isArray(value) && 'raw' in value
 }
 
-function createWrappedTemplateFunction(baseFn: BaseTemplateFunction): BaseTemplateFunction {
-  const wrappedFn = function (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult {
-    if (!isTemplateStringsArray(stringsOrOptions)) {
-      return baseFn(stringsOrOptions)
-    }
-    
-    const prompt = String.raw({ raw: stringsOrOptions }, ...values)
-    const fn = async (options?: AIFunctionOptions) => {
-      const result = await baseFn({ ...options, prompt })
-      if (result && typeof result === 'object' && 'call' in result && typeof (result as any).call === 'function') {
-        return (result as any).call(options)
-      }
-      return result
-    }
-    
-    const templatePromise = Promise.resolve(fn())
-    const templateResult = Object.create(templatePromise, {
-      [Symbol.asyncIterator]: {
-        value: async function* () {
-          const result = await fn({ streaming: { onProgress: () => {} } })
-          if (typeof result === 'string') {
-            yield result
-          } else if (Symbol.asyncIterator in (result as any)) {
-            yield* result as AsyncIterable<string>
-          }
-        },
-        writable: true,
-        configurable: true
-      },
-      call: {
-        value: fn,
-        writable: true,
-        configurable: true
-      },
-      then: {
-        value: templatePromise.then.bind(templatePromise),
-        writable: true,
-        configurable: true
-      },
-      catch: {
-        value: templatePromise.catch.bind(templatePromise),
-        writable: true,
-        configurable: true
-      },
-      finally: {
-        value: templatePromise.finally.bind(templatePromise),
-        writable: true,
-        configurable: true
-      }
-    }) as TemplateResult
-    
-    return templateResult
-  }
-
-  // Add required properties to make it a BaseTemplateFunction
-  Object.defineProperties(wrappedFn, {
-    [Symbol.asyncIterator]: {
-      value: function () {
-        return baseFn[Symbol.asyncIterator]()
-      },
-      writable: true,
-      configurable: true,
-    },
-    queue: {
-      get: () => baseFn.queue,
-      configurable: true,
-    },
-    withOptions: {
-      value: (options?: AIFunctionOptions) => baseFn(options),
-      writable: true,
-      configurable: true,
-    }
-  })
-
-  return wrappedFn as BaseTemplateFunction
-}
-
-// Create the AI template tag function
-const aiFn = createWrappedTemplateFunction(templateFn)
-
-// Create the AI object with template literal and async iteration support
-function createAITemplateTag(fn: BaseTemplateFunction): AI {
+function createWrappedTemplateFunction(baseFn: BaseTemplateFunction): AI {
   function aiFunction(strings: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult {
     if (isTemplateStringsArray(strings)) {
-      const prompt = String.raw({ raw: strings }, ...values)
-      const result = fn({ prompt })
-      const templateResult = Object.create(result, {
-        call: {
-          value: (options?: AIFunctionOptions) => fn({ ...options, prompt }),
-          writable: true,
-          configurable: true,
-        }
+      const prompt = String.raw({ raw: strings.raw }, ...values)
+      const result = baseFn({ prompt })
+      return Object.assign(result, {
+        call: (options?: AIFunctionOptions) => baseFn({ ...options, prompt })
       })
-      return templateResult
     }
-    return fn(strings as AIFunctionOptions)
+    return baseFn(strings as AIFunctionOptions)
   }
 
   // Add required properties to make it a BaseTemplateFunction
-  Object.defineProperties(aiFunction, {
-    [Symbol.asyncIterator]: {
-      value: fn[Symbol.asyncIterator].bind(fn),
-      writable: true,
-      configurable: true,
-    },
-    queue: {
-      get: () => fn.queue,
-      configurable: true,
-    },
-    withOptions: {
-      value: fn.withOptions.bind(fn),
-      writable: true,
-      configurable: true,
-    }
+  Object.assign(aiFunction, {
+    [Symbol.asyncIterator]: baseFn[Symbol.asyncIterator].bind(baseFn),
+    queue: baseFn.queue,
+    withOptions: baseFn.withOptions.bind(baseFn)
   })
 
-  // Create a proxy to handle both function calls and template tag usage
-  const proxy = new Proxy(aiFunction, {
-    apply(target, thisArg, args: [TemplateStringsArray | AIFunctionOptions, ...unknown[]]) {
-      if (args.length === 0) {
-        return target.apply(thisArg, [{}])
-      }
-      if (isTemplateStringsArray(args[0])) {
-        const result = target.apply(thisArg, args)
-        return new Proxy(result, {
-          apply(resultTarget: TemplateResult, resultThisArg, resultArgs: [AIFunctionOptions?]) {
-            return resultTarget.call.apply(resultThisArg, resultArgs)
-          }
-        })
-      }
-      return target.apply(thisArg, args)
-    }
-  })
+  // Add prototype properties to make it callable as a function
+  Object.setPrototypeOf(aiFunction, Function.prototype)
 
-  return proxy as unknown as AI
+  return aiFunction as AI
 }
 
-export const ai = createAITemplateTag(aiFn)
+// Create and export the AI template tag function
+export const ai = createWrappedTemplateFunction(templateFn)
 
-// Create the list function with template literal and async iteration support
+// Create and export the list function
 export const list = createWrappedTemplateFunction(listFn) as ListFunction
 
-// Export types for consumers
-export * from './types'
+// Export types
+export type { AI, ListFunction, BaseTemplateFunction, AIFunctionOptions, TemplateResult }

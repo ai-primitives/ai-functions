@@ -1,134 +1,67 @@
-import type { RequestHandlingOptions } from '../types'
-export type { RequestHandlingOptions }
-import { AIRequestError } from '../types'
 import PQueue from 'p-queue'
+import { AIRequestError } from '../errors'
+import type { Queue } from '../types'
 
-export class RequestHandler {
-  private retryOptions: {
-    maxRetries: number
-    initialDelay: number
-    maxDelay: number
-    backoffFactor: number
-  }
-  private queue: PQueue
-  private streamingTimeout: number
+export interface RequestHandlingOptions {
+  maxRetries?: number
+  retryDelay?: number
+  timeout?: number
+  concurrency?: number
+}
 
-  constructor(options: RequestHandlingOptions = {}) {
-    this.retryOptions = {
-      maxRetries: options.maxRetries ?? 2,
-      initialDelay: options.retryDelay ?? 100,
-      maxDelay: options.timeout ?? 1000,
-      backoffFactor: 2
-    }
-    this.queue = new PQueue({ concurrency: 1 })
-    this.streamingTimeout = options.streamingTimeout ?? 30000
-  }
+export function createRequestHandler(options: { requestHandling?: RequestHandlingOptions } = {}) {
+  const {
+    maxRetries = 3,
+    retryDelay = 1000,
+    timeout = 30000,
+    concurrency = 1,
+  } = options.requestHandling || {}
 
-  async executeWithRetry<T>(
+  const queue = new PQueue({
+    concurrency,
+    timeout,
+    throwOnTimeout: true,
+  }) as Queue
+
+  async function executeWithRetry<T>(
     operation: () => Promise<T>,
-    retryable: boolean = true,
-    isStreaming: boolean = false
+    attempt = 0,
+    lastError?: Error
   ): Promise<T> {
-    let lastError: Error | undefined
-    let attempt = 0
-    const maxAttempts = retryable ? this.retryOptions.maxRetries : 0
-    const timeoutMs = isStreaming ? this.streamingTimeout : this.retryOptions.maxDelay
+    try {
+      const timeoutPromise = new Promise<T>((_, reject) => {
+        setTimeout(() => {
+          reject(new AIRequestError(`Request timed out after ${timeout}ms`, undefined, true))
+        }, timeout)
+      })
 
-    while (attempt <= maxAttempts) {
-      try {
-        const abortController = new AbortController()
-        const timeoutId = setTimeout(() => {
-          abortController.abort()
-        }, timeoutMs)
-
-        try {
-          const result = await operation()
-          clearTimeout(timeoutId)
-          return result
-        } catch (error) {
-          lastError = error as Error
-          
-          if (!retryable || error instanceof AIRequestError && !error.retryable) {
-            throw error
-          }
-          
-          if (attempt >= maxAttempts) {
-            throw new AIRequestError(
-              `Failed after ${attempt + 1} attempts: ${lastError?.message || 'Unknown error'}`,
-              undefined,
-              false
-            )
-          }
-
-          const delay = Math.min(
-            this.retryOptions.initialDelay * Math.pow(this.retryOptions.backoffFactor, attempt),
-            this.retryOptions.maxDelay
-          )
-          await new Promise(resolve => setTimeout(resolve, delay))
-          attempt++
-        }
-      } catch (error) {
-        lastError = error as Error
-        
-        if (!retryable || error instanceof AIRequestError && !error.retryable) {
-          throw error
-        }
-        
-        if (attempt >= maxAttempts) {
-          throw new AIRequestError(
-            `Failed after ${attempt + 1} attempts: ${lastError?.message || 'Unknown error'}`,
-            undefined,
-            false
-          )
-        }
-
-        const delay = Math.min(
-          this.retryOptions.initialDelay * Math.pow(this.retryOptions.backoffFactor, attempt),
-          this.retryOptions.maxDelay
-        )
-        await new Promise(resolve => setTimeout(resolve, delay))
-        attempt++
-      }
-    }
-
-    throw lastError || new AIRequestError('Operation failed with no error details')
-  }
-
-  add<T>(operation: () => Promise<T>, retryable: boolean = true, isStreaming: boolean = false): Promise<T> {
-    return this.queue.add(async () => {
-      const result = await this.executeWithRetry(operation, retryable, isStreaming)
-      if (result === undefined) {
-        throw new Error('Operation returned undefined')
-      }
+      const operationPromise = operation()
+      const result = await Promise.race([operationPromise, timeoutPromise])
       return result
-    }) as Promise<T>
+    } catch (error) {
+      const isRetryable = !(error instanceof AIRequestError) || error.retryable
+      
+      if (!isRetryable || attempt >= maxRetries - 1) {
+        throw new AIRequestError(
+          `Failed after ${attempt + 1} attempts: ${lastError?.message || 'Unknown error'}`,
+          error,
+          false
+        )
+      }
+
+      const delay = Math.min(retryDelay * Math.pow(2, attempt), 10000)
+      await new Promise(resolve => setTimeout(resolve, delay))
+      
+      return executeWithRetry(operation, attempt + 1, error as Error)
+    }
   }
 
-  get concurrency(): number | undefined {
-    return this.queue?.concurrency
-  }
-
-  get size(): number {
-    return this.queue?.size ?? 0
-  }
-
-  get pending(): number {
-    return this.queue?.pending ?? 0
-  }
-
-  clear(): void {
-    this.queue?.clear()
-  }
-
-  pause(): void {
-    this.queue?.pause()
-  }
-
-  resume(): void {
-    this.queue?.start()
+  return {
+    add: async <T>(operation: () => Promise<T>): Promise<T> => {
+      return queue.add(() => executeWithRetry(operation))
+    },
+    queue
   }
 }
 
-export function createRequestHandler(options: RequestHandlingOptions = {}): RequestHandler {
-  return new RequestHandler(options)
-} 
+export type RequestHandler = ReturnType<typeof createRequestHandler> 
