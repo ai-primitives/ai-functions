@@ -92,7 +92,8 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
       frequencyPenalty: options.frequencyPenalty,
       presencePenalty: options.presencePenalty,
       stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
-      seed: options.seed
+      seed: options.seed,
+      signal: options.signal
     }
 
     const performRequest = async function* () {
@@ -104,23 +105,36 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
           schema: z.string(),
           prompt: `Generate a list of items based on this prompt: ${prompt}`,
           system: options.system,
-          ...modelParams
+          ...modelParams,
+          signal: options.signal
         }
 
         const { elementStream } = streamObject(streamOptions)
 
-        for await (const item of elementStream) {
-          yield item
+        try {
+          for await (const item of elementStream) {
+            if (options.signal?.aborted) {
+              throw new Error('Stream was aborted')
+            }
+            yield item
+          }
+        } catch (error) {
+          if (error instanceof Error) {
+            if (error.name === 'AbortError' || options.signal?.aborted) {
+              throw new Error('Stream was aborted')
+            }
+            throw error
+          }
+          throw error
         }
       } catch (error) {
         if (error instanceof Error) {
-          if (error.name === 'AbortError') {
+          if (error.name === 'AbortError' || options.signal?.aborted) {
             throw new Error('Stream was aborted')
           } else if (error.name === 'TimeoutError') {
             throw new Error('Stream timed out')
-          } else {
-            throw error
           }
+          throw error
         }
         throw new Error('Failed to generate list: Unknown error occurred')
       }
@@ -129,7 +143,17 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
     const queue = getQueue(options)
     if (queue) {
       const generator = await queue.add(performRequest)
-      yield* generator
+      try {
+        yield* generator
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.name === 'AbortError' || options.signal?.aborted) {
+            throw new Error('Stream was aborted')
+          }
+          throw error
+        }
+        throw error
+      }
     } else {
       yield* performRequest()
     }
@@ -168,76 +192,90 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
   function createTemplateResult(prompt: string, options: AIFunctionOptions): TemplateResult {
     const promise = templateFn(prompt, options)
     const result = Object.assign(
-      (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts }),
+      async function(opts?: AIFunctionOptions) {
+        return templateFn(prompt, { ...options, ...opts })
+      },
       {
-        [Symbol.asyncIterator]: async function* () {
-          const response = await templateFn(prompt, options)
-          yield response
-        },
+        [Symbol.asyncIterator]: () => executeStreamingRequest(prompt, options),
         call: (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts }),
         then: (onfulfilled?: ((value: string) => string | PromiseLike<string>) | null | undefined) =>
-          templateFn(prompt, options).then(onfulfilled),
+          promise.then(onfulfilled),
         catch: (onrejected?: ((reason: any) => string | PromiseLike<string>) | null | undefined) =>
-          templateFn(prompt, options).catch(onrejected),
+          promise.catch(onrejected),
         finally: (onfinally?: (() => void) | null | undefined) =>
-          templateFn(prompt, options).finally(onfinally)
+          promise.finally(onfinally)
       }
     ) as unknown as TemplateResult
+
+    // Make the result async iterable
+    Object.defineProperty(result, Symbol.asyncIterator, {
+      value: () => executeStreamingRequest(prompt, options),
+      enumerable: false,
+      configurable: true,
+      writable: true
+    })
+
+    // Make the result a promise
+    Object.setPrototypeOf(result, Promise.prototype)
 
     return result
   }
 
   function createBaseFunction(): BaseTemplateFunction {
-    function fn(stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult {
-      if (!stringsOrOptions) {
-        return createTemplateResult('', defaultOptions)
-      }
-
-      if (Array.isArray(stringsOrOptions)) {
-        const strings = stringsOrOptions as TemplateStringsArray
-        if (strings.length - 1 !== values.length) {
-          throw new Error('Template literal slots must match provided values')
+    const fn = Object.assign(
+      function(stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult {
+        if (!stringsOrOptions) {
+          return createTemplateResult('', defaultOptions)
         }
 
-        const lastValue = values[values.length - 1]
-        const options = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
-          ? { ...defaultOptions, ...lastValue as AIFunctionOptions }
-          : defaultOptions
-        const actualValues = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
-          ? values.slice(0, -1)
-          : values
+        if (Array.isArray(stringsOrOptions)) {
+          const strings = stringsOrOptions as TemplateStringsArray
+          if (strings.length - 1 !== values.length) {
+            throw new Error('Template literal slots must match provided values')
+          }
 
-        const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
-        currentPrompt = prompt
-        return createTemplateResult(prompt, options)
+          const lastValue = values[values.length - 1]
+          const options = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
+            ? { ...defaultOptions, ...lastValue as AIFunctionOptions }
+            : defaultOptions
+          const actualValues = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
+            ? values.slice(0, -1)
+            : values
+
+          const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
+          currentPrompt = prompt
+
+          const result = createTemplateResult(prompt, options)
+          Object.defineProperty(result, Symbol.asyncIterator, {
+            value: () => executeStreamingRequest(prompt, options),
+            enumerable: false,
+            configurable: true,
+            writable: true
+          })
+
+          return result
+        }
+
+        const options = { ...defaultOptions, ...stringsOrOptions }
+        return createTemplateResult('', options)
+      },
+      {
+        withOptions: (opts?: AIFunctionOptions) => {
+          const mergedOptions = { ...defaultOptions, ...opts }
+          const result = createTemplateResult(currentPrompt || '', mergedOptions)
+          Object.defineProperty(result, Symbol.asyncIterator, {
+            value: () => executeStreamingRequest(currentPrompt || '', mergedOptions),
+            enumerable: false,
+            configurable: true,
+            writable: true
+          })
+          return result
+        },
+        queue: currentQueue
       }
+    ) as BaseTemplateFunction
 
-      const options = { ...defaultOptions, ...stringsOrOptions }
-      return createTemplateResult('', options)
-    }
-
-    // Add the asyncIterator to the base function
-    Object.defineProperty(fn, Symbol.asyncIterator, {
-      value: () => asyncIterator(currentPrompt || '', defaultOptions),
-      enumerable: false,
-      configurable: true
-    })
-
-    // Add the withOptions method
-    Object.defineProperty(fn, 'withOptions', {
-      value: (opts?: AIFunctionOptions) => templateFn(currentPrompt || '', { ...defaultOptions, ...opts }),
-      enumerable: false,
-      configurable: true
-    })
-
-    // Add the queue property
-    Object.defineProperty(fn, 'queue', {
-      get: () => currentQueue,
-      enumerable: false,
-      configurable: true
-    })
-
-    return fn as BaseTemplateFunction
+    return fn
   }
 
   return createBaseFunction()

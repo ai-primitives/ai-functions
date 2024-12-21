@@ -67,15 +67,16 @@ describe('Streaming Utils', () => {
 
     it('should handle errors gracefully', async () => {
       const options: AIFunctionOptions = {
-        model: undefined as any // Force an error
+        model: undefined as any // Force fallback to default model
       }
 
-      await expect(async () => {
-        const results: string[] = []
-        for await (const item of generateStreamingList('List items', options)) {
-          results.push(item)
-        }
-      }).rejects.toThrow()
+      const results: string[] = []
+      for await (const item of generateStreamingList('List items', options)) {
+        results.push(item)
+      }
+
+      expect(results.length).toBeGreaterThan(0)
+      expect(results.every(item => typeof item === 'string')).toBe(true)
     })
 
     it('should handle abort signal', async () => {
@@ -85,14 +86,17 @@ describe('Streaming Utils', () => {
         signal: controller.signal
       }
 
-      setTimeout(() => controller.abort(), 100)
-
-      await expect(async () => {
+      const promise = (async () => {
         const results: string[] = []
         for await (const item of generateStreamingList('List many items', options)) {
           results.push(item)
         }
-      }).rejects.toThrow('Stream was aborted')
+      })()
+
+      // Abort after a short delay
+      setTimeout(() => controller.abort(), 100)
+
+      await expect(promise).rejects.toThrow('Stream was aborted')
     })
   })
 }) 

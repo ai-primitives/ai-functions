@@ -17,6 +17,7 @@ export type AIFunctionOptions = {
   seed?: number
   system?: string
   prompt?: string
+  signal?: AbortSignal
   streaming?: {
     onProgress?: (chunk: string) => void
     enableTokenCounting?: boolean
@@ -24,7 +25,7 @@ export type AIFunctionOptions = {
 }
 
 export type BaseTemplateFunction = {
-  (strings: TemplateStringsArray, ...values: any[]): Promise<string>
+  (strings: TemplateStringsArray, ...values: any[]): Promise<string> & AsyncIterable<string>
   withOptions: (options: AIFunctionOptions) => Promise<string> & AsyncIterable<string>
 }
 
