@@ -11,13 +11,13 @@ if (process.env.AI_GATEWAY) {
   const customProvider = createOpenAICompatible({
     baseURL: process.env.AI_GATEWAY,
     headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY || ''}`
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY || ''}`,
     },
-    name: 'openai-compatible'
+    name: 'openai-compatible',
   })
   // Replace the default provider with our custom configured one
   Object.assign(openai, customProvider)
 }
 
 // Set default model for tests
-process.env.OPENAI_DEFAULT_MODEL = 'gpt-4o'                                  
+process.env.OPENAI_DEFAULT_MODEL = 'gpt-4o'

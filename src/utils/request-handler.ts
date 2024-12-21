@@ -17,7 +17,7 @@ export class RequestHandler {
       maxRetries: options.maxRetries ?? 2,
       initialDelay: options.retryDelay ?? 100,
       maxDelay: options.timeout ?? 1000,
-      backoffFactor: 2
+      backoffFactor: 2,
     }
     this.queue = new PQueue({ concurrency: 1 })
     this.streamingTimeout = options.streamingTimeout ?? 30000
@@ -31,20 +31,20 @@ export class RequestHandler {
 
     const executeWithTimeout = async (op: Promise<T> | AsyncGenerator<T>): Promise<T> => {
       const abortController = new AbortController()
-      const timeoutId = setTimeout(() => {
+      const timeoutId = globalThis.setTimeout(() => {
         abortController.abort()
       }, timeoutMs)
 
       try {
         if (op instanceof Promise) {
-          const result = await Promise.race([
+          const result = (await Promise.race([
             op,
             new Promise<never>((_, reject) => {
               abortController.signal.addEventListener('abort', () => {
                 reject(new AIRequestError(`Request timed out after ${timeoutMs}ms`))
               })
-            })
-          ]) as T
+            }),
+          ])) as T
           return result
         } else {
           const chunks: T[] = []
@@ -60,7 +60,7 @@ export class RequestHandler {
           return chunks[chunks.length - 1]
         }
       } finally {
-        clearTimeout(timeoutId)
+        globalThis.clearTimeout(timeoutId)
       }
     }
 
@@ -69,24 +69,17 @@ export class RequestHandler {
         return await executeWithTimeout(operation())
       } catch (error) {
         lastError = error as Error
-        
-        if (!retryable || error instanceof AIRequestError && !error.retryable) {
+
+        if (!retryable || (error instanceof AIRequestError && !error.retryable)) {
           throw error
         }
-        
+
         if (attempt >= maxAttempts) {
-          throw new AIRequestError(
-            `Failed after ${attempt + 1} attempts: ${lastError?.message || 'Unknown error'}`,
-            undefined,
-            false
-          )
+          throw new AIRequestError(`Failed after ${attempt + 1} attempts: ${lastError?.message || 'Unknown error'}`, undefined, false)
         }
 
-        const delay = Math.min(
-          this.retryOptions.initialDelay * Math.pow(this.retryOptions.backoffFactor, attempt),
-          this.retryOptions.maxDelay
-        )
-        await new Promise(resolve => setTimeout(resolve, delay))
+        const delay = Math.min(this.retryOptions.initialDelay * Math.pow(this.retryOptions.backoffFactor, attempt), this.retryOptions.maxDelay)
+        await new Promise((resolve) => globalThis.setTimeout(resolve, delay))
         attempt++
       }
     }
@@ -96,13 +89,13 @@ export class RequestHandler {
 
   execute<T>(operation: () => Promise<T> | AsyncGenerator<T>, retryable = true, isStreaming = false): Promise<T> {
     const executeOperation = async (): Promise<T> => {
-      const result = await this.executeWithRetry(operation, retryable, isStreaming);
+      const result = await this.executeWithRetry(operation, retryable, isStreaming)
       if (result === undefined) {
-        throw new AIRequestError('Operation returned undefined result');
+        throw new AIRequestError('Operation returned undefined result')
       }
-      return result as T;
-    };
-    return this.queue.add(executeOperation) as Promise<T>;
+      return result as T
+    }
+    return this.queue.add(executeOperation) as Promise<T>
   }
 
   get concurrency(): number | undefined {
@@ -132,4 +125,4 @@ export class RequestHandler {
 
 export function createRequestHandler(options: RequestHandlingOptions = {}): RequestHandler {
   return new RequestHandler(options)
-}                               
+}

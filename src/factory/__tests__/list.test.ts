@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createListFunction } from '../list'
 import { openai } from '@ai-sdk/openai'
-import type { TemplateResult } from '../../types'
 
 beforeEach(() => {
   process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key'
@@ -47,10 +46,8 @@ describe('createListFunction', () => {
   it('should handle concurrent list operations', async () => {
     const list = createListFunction()
     const topics = ['cities', 'foods', 'sports']
-    const tasks = topics.map(topic => 
-      list`5 popular ${topic}`({ model, concurrency: 2 })
-    )
-    
+    const tasks = topics.map((topic) => list`5 popular ${topic}`({ model, concurrency: 2 }))
+
     const results = await Promise.all(tasks)
     expect(results).toHaveLength(3)
     results.forEach((result: string) => {
@@ -59,15 +56,14 @@ describe('createListFunction', () => {
   })
 
   it('should handle concurrent streaming list operations', async () => {
-    const list = createListFunction()
     const topics = ['movies', 'books', 'games']
-    
+
     // Configure the list function with options once
     const configuredList = createListFunction({
       model,
-      concurrency: 2
+      concurrency: 2,
     })
-    
+
     // Create an array of promises that will resolve to arrays of items
     const promises = topics.map(async (topic) => {
       const items: string[] = []
@@ -77,10 +73,10 @@ describe('createListFunction', () => {
       }
       return items
     })
-    
+
     // Wait for all promises to complete
     const results = await Promise.all(promises)
-    
+
     expect(results).toHaveLength(3)
     results.forEach((items: string[]) => {
       expect(items.length).toBeGreaterThan(0)
@@ -90,22 +86,18 @@ describe('createListFunction', () => {
 
   it('should handle errors in concurrent list operations', async () => {
     const list = createListFunction()
-    const tasks = [
-      list`valid request`({ model }),
-      list`trigger error`({ model }),
-      list`another valid request`({ model })
-    ].map(promise => 
-      promise.catch(err => {
+    const tasks = [list`valid request`({ model }), list`trigger error`({ model }), list`another valid request`({ model })].map((promise) =>
+      promise.catch(() => {
         // If any request fails, we'll handle it gracefully
         return 'error occurred'
-      })
+      }),
     )
-    
+
     const results = await Promise.all(tasks)
     expect(results).toHaveLength(3)
-    results.forEach(result => {
+    results.forEach((result) => {
       expect(typeof result).toBe('string')
       expect(result.length).toBeGreaterThan(0)
     })
   })
-})                                                                      
+})

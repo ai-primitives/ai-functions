@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { ai } from './index'
 import { z } from 'zod'
-import type { AIFunctionOptions, AsyncIterablePromise } from './types'
+import type { AsyncIterablePromise } from './types'
 import { openai } from '@ai-sdk/openai'
 
 describe('ai template tag', () => {
@@ -34,7 +34,7 @@ describe('ai template tag', () => {
     const result = await ai`Generate a greeting with the current timestamp`({
       model,
       outputFormat: 'json',
-      schema
+      schema,
     })
     const parsed = schema.parse(JSON.parse(result))
     expect(parsed).toBeDefined()
@@ -43,19 +43,19 @@ describe('ai template tag', () => {
   })
 
   it('should support streaming responses', async () => {
-    const streamingModel = openai('gpt-4o', { 
-      structuredOutputs: true
+    const streamingModel = openai('gpt-4o', {
+      structuredOutputs: true,
     })
-    const response = ai`List some items`({ 
+    const response = ai`List some items`({
       model: streamingModel,
       outputFormat: 'json',
       schema: z.array(z.string()),
       streaming: {
         onProgress: () => {},
-        enableTokenCounting: true
-      }
+        enableTokenCounting: true,
+      },
     }) as AsyncIterablePromise<string>
-    
+
     expect(response[Symbol.asyncIterator]).toBeDefined()
     const chunks: string[] = []
     for await (const chunk of response) {
