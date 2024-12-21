@@ -1,12 +1,18 @@
-import { type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
-import { Response, Headers } from 'undici'
+import { type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool, type ToolResultContent } from 'ai'
+import { Response } from '@ai-sdk/provider-utils'
 
 export type MockGenerateTextResult = GenerateTextResult<
   Record<string, CoreTool<any, any>>,
   Record<string, unknown>
 >
 
-export type MockGenerateObjectResult = GenerateObjectResult<JSONValue>
+export type MockGenerateObjectResult = GenerateTextResult<
+  Record<string, CoreTool<any, any>>,
+  Record<string, unknown>
+> & {
+  object: JSONValue
+  toJsonResponse: () => Response
+}
 
 export const createMockTextResponse = (text: string): MockGenerateTextResult => ({
   text,
@@ -29,6 +35,7 @@ export const createMockTextResponse = (text: string): MockGenerateTextResult => 
 })
 
 export const createMockObjectResponse = <T extends JSONValue>(object: T): MockGenerateObjectResult => ({
+  text: JSON.stringify(object),
   object,
   usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
   response: {
@@ -40,12 +47,15 @@ export const createMockObjectResponse = <T extends JSONValue>(object: T): MockGe
   warnings: [],
   request: {},
   logprobs: undefined,
+  toolCalls: [],
+  toolResults: [],
+  steps: [],
   experimental_output: object,
   experimental_providerMetadata: {},
   toJsonResponse: () =>
     new Response(JSON.stringify(object), {
       status: 200,
-      headers: new Headers({ 'Content-Type': 'application/json' }),
+      headers: { 'Content-Type': 'application/json' },
     }),
 })
 

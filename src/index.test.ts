@@ -19,13 +19,20 @@ describe('ai', () => {
 
   it('should support categorizeProduct function', async () => {
     const mockResult = {
-      productType: 'App',
+      productType: 'App' as const,
+      customer: 'Enterprise',
+      solution: 'Productivity',
       description: 'A cool app',
     }
     const mockResponse = createMockObjectResponse(mockResult)
     vi.mocked(generateText).mockResolvedValue(mockResponse)
 
-    const result = await ai.categorizeProduct({ productType: 'App', description: 'test' })
+    const result = await ai.categorizeProduct({
+      productType: 'App',
+      customer: 'Enterprise',
+      solution: 'Productivity',
+      description: 'test',
+    })
     expect(result).toEqual(mockResult)
   })
 
@@ -57,6 +64,7 @@ describe('list', () => {
     const result = await list`Generate a list`
     expect(result).toBe('Item 1\nItem 2\nItem 3')
   })
+
 
   it('should support async iteration', async () => {
     const chunks = ['Item 1\n', 'Item 2\n', 'Item 3']

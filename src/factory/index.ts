@@ -108,7 +108,8 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
       throw new Error('Invalid response format')
     }
 
-    if ('experimental_stream' in result) {
+    // Type guard for experimental_stream
+    if ('experimental_stream' in result && result.experimental_stream && Symbol.asyncIterator in result.experimental_stream) {
       for await (const chunk of result.experimental_stream) {
         if (options.outputFormat === 'json') {
           // For JSON, we accumulate the entire response
