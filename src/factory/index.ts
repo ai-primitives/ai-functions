@@ -3,6 +3,7 @@ import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@ai-sdk/openai-compatible'
 import { LanguageModelV1 } from '@ai-sdk/provider'
 import { Response } from 'undici'
+import { ReadableStream } from 'stream/web'
 import { z } from 'zod'
 import PQueue from 'p-queue'
 import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue } from '../types'
@@ -108,7 +109,9 @@ export function createJsonResponse(result: GenerateJsonResult): Response {
 }
 
 export function createStreamResponse(result: StreamingResult): Response {
-  return new Response(result.experimental_stream as unknown as ReadableStream, {
+  // Cast to web-streams-polyfill ReadableStream type which is compatible with Response
+  const stream = result.experimental_stream as unknown as ReadableStream<Uint8Array>
+  return new Response(stream, {
     headers: { 'Content-Type': 'text/plain' },
   })
 }
