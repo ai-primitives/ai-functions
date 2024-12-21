@@ -1,15 +1,11 @@
-import { type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
+import { type GenerateTextResult, type JSONValue, type CoreTool } from 'ai'
 import { Response } from 'undici'
 
-export type MockGenerateTextResult = GenerateTextResult<
-  Record<string, CoreTool<any, any>>,
-  JSONValue
->
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export type MockGenerateTextResult = GenerateTextResult<Record<string, CoreTool<any, any>>, JSONValue>
 
-export type MockGenerateObjectResult = GenerateTextResult<
-  Record<string, CoreTool<any, any>>,
-  JSONValue
-> & {
+export type MockGenerateObjectResult = GenerateTextResult<Record<string, CoreTool<any, any>>, JSONValue> & {
+  /* eslint-enable @typescript-eslint/no-explicit-any */
   object: JSONValue
   toJsonResponse: () => Response
 }
@@ -60,7 +56,9 @@ export const createMockObjectResponse = (object: JSONValue): MockGenerateObjectR
     }),
 })
 
-export const createMockStreamResponse = (chunks: string[]): MockGenerateTextResult & {
+export const createMockStreamResponse = (
+  chunks: string[],
+): MockGenerateTextResult & {
   experimental_stream: AsyncIterable<string>
 } => ({
   ...createMockTextResponse(chunks.join('')),

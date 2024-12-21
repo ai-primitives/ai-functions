@@ -1,4 +1,4 @@
-import { generateText, generateObject, Output, type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
+import { generateText, generateObject, Output, type GenerateTextResult, type JSONValue, type CoreTool } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@ai-sdk/openai-compatible'
 import { LanguageModelV1 } from '@ai-sdk/provider'
@@ -6,10 +6,10 @@ import { Response } from 'undici'
 import { z } from 'zod'
 import PQueue from 'p-queue'
 import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue } from '../types'
-import { createRequestHandler } from '../utils/request-handler';
-import { StreamProgressTracker } from '../utils/stream-progress';
+import { createRequestHandler } from '../utils/request-handler'
+import { StreamProgressTracker } from '../utils/stream-progress'
 import { AIRequestError } from '../errors'
-import { RequestHandlingOptions, TemplateResult } from '../types';
+import { TemplateResult } from '../types'
 
 // Add this at the top of the file, before any other code
 function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
@@ -18,7 +18,9 @@ function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
 
 // PLACEHOLDER: imports and type definitions
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export type GenerateResult = GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export type GenerateJsonResult = GenerateResult & {
   object: JSONValue
@@ -51,11 +53,11 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
       return { schema }
     }
 
-    const requestHandler = createRequestHandler({ requestHandling: options.requestHandling });
+    const requestHandler = createRequestHandler({ requestHandling: options.requestHandling })
 
     const result = await requestHandler.execute(async () => {
       return generateText({
-        model: options.model || getProvider()('gpt-4o-mini') as LanguageModelV1,
+        model: options.model || (getProvider()('gpt-4o-mini') as LanguageModelV1),
         prompt: options.prompt || '',
         maxRetries: 2,
         experimental_output: Output.object({ schema: schema }),
@@ -65,10 +67,10 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
         topP: options.topP,
         frequencyPenalty: options.frequencyPenalty,
         presencePenalty: options.presencePenalty,
-        stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+        stopSequences: options.stop ? (Array.isArray(options.stop) ? options.stop : [options.stop]) : undefined,
         seed: options.seed,
-      });
-    });
+      })
+    })
 
     if (!result.experimental_output) {
       throw new Error('No output received from model')
@@ -96,9 +98,9 @@ function getProvider() {
         baseURL: gateway,
         name: 'openai',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        }
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
       } satisfies OpenAICompatibleProviderSettings)
     : openai
 }
@@ -108,7 +110,11 @@ export function createJsonResponse(result: GenerateJsonResult): Response {
 }
 
 export function createStreamResponse(result: StreamingResult): Response {
-  return new Response(result.experimental_stream as unknown as ReadableStream, {
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  // Cast to web-streams-polyfill ReadableStream type which is compatible with Response
+  const stream = result.experimental_stream as unknown as ReadableStream
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  return new Response(stream, {
     headers: { 'Content-Type': 'text/plain' },
   })
 }
@@ -132,14 +138,14 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
 
   const templateFn = async (prompt: string, options: AIFunctionOptions = defaultOptions): Promise<string> => {
     currentPrompt = prompt
-    
+
     const modelParams = {
       temperature: options.temperature,
       maxTokens: options.maxTokens,
       topP: options.topP,
       frequencyPenalty: options.frequencyPenalty,
       presencePenalty: options.presencePenalty,
-      stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+      stopSequences: options.stop ? (Array.isArray(options.stop) ? options.stop : [options.stop]) : undefined,
       seed: options.seed,
       system: options.system,
     }
@@ -150,19 +156,27 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
           try {
             const model = options.model || openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o', { structuredOutputs: true })
             if (options.schema) {
-              const schema = options.schema instanceof z.ZodType 
-                ? options.schema 
-                : z.object(Object.fromEntries(
-                    Object.entries(options.schema as Record<string, string>).map(([key, type]) => [
-                      key,
-                      type === 'string' ? z.string() :
-                      type === 'number' ? z.number() :
-                      type === 'boolean' ? z.boolean() :
-                      type === 'array' ? z.array(z.unknown()) :
-                      type === 'object' ? z.record(z.string(), z.unknown()) :
-                      z.unknown()
-                    ])
-                  ))
+              const schema =
+                options.schema instanceof z.ZodType
+                  ? options.schema
+                  : z.object(
+                      Object.fromEntries(
+                        Object.entries(options.schema as Record<string, string>).map(([key, type]) => [
+                          key,
+                          type === 'string'
+                            ? z.string()
+                            : type === 'number'
+                              ? z.number()
+                              : type === 'boolean'
+                                ? z.boolean()
+                                : type === 'array'
+                                  ? z.array(z.unknown())
+                                  : type === 'object'
+                                    ? z.record(z.string(), z.unknown())
+                                    : z.unknown(),
+                        ]),
+                      ),
+                    )
               const result = await generateObject({
                 model,
                 schema,
@@ -187,12 +201,14 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
           }
         }
 
+        /* eslint-disable @typescript-eslint/no-explicit-any */
         const result = (await generateText({
           model: options.model || openai('gpt-4o-mini'),
           prompt,
           ...modelParams,
           ...options,
         })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
+        /* eslint-enable @typescript-eslint/no-explicit-any */
 
         if (!result) {
           throw new AIRequestError('No result received from model', undefined, false)
@@ -233,14 +249,14 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
       topP: options.topP,
       frequencyPenalty: options.frequencyPenalty,
       presencePenalty: options.presencePenalty,
-      stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+      stopSequences: options.stop ? (Array.isArray(options.stop) ? options.stop : [options.stop]) : undefined,
       seed: options.seed,
       system: options.system,
     }
 
-    const progressTracker = options.streaming ? 
-      new StreamProgressTracker(options.streaming) : undefined;
+    const progressTracker = options.streaming ? new StreamProgressTracker(options.streaming) : undefined
 
+    /* eslint-disable @typescript-eslint/no-explicit-any */
     const executeRequest = async (): Promise<GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>> => {
       const result = (await generateText({
         model: options.model || openai('gpt-4o-mini'),
@@ -249,6 +265,7 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
         ...modelParams,
         ...options,
       })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
+      /* eslint-enable @typescript-eslint/no-explicit-any */
 
       if (!result) {
         throw new Error('No result received from model')
@@ -259,37 +276,39 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
 
     try {
       const currentQueue = initQueue(options)
-      const result = currentQueue 
-        ? await currentQueue.add(executeRequest)
-        : await executeRequest()
+      const result = currentQueue ? await currentQueue.add(executeRequest) : await executeRequest()
 
       if (isStreamingResult(result)) {
         for await (const chunk of result.experimental_stream) {
           if (progressTracker) {
-            progressTracker.onChunk(chunk);
+            progressTracker.onChunk(chunk)
           }
           yield chunk
         }
-        progressTracker?.onComplete();
+        progressTracker?.onComplete()
       } else if (result) {
         if (progressTracker) {
-          progressTracker.onChunk(result.text);
-          progressTracker.onComplete();
+          progressTracker.onChunk(result.text)
+          progressTracker.onComplete()
         }
         yield result.text
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to generate text';
-      progressTracker?.onChunk(errorMessage);
-      progressTracker?.onComplete();
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate text'
+      progressTracker?.onChunk(errorMessage)
+      progressTracker?.onComplete()
       console.error('Error in asyncIterator:', error)
       yield errorMessage
     }
   }
 
-  const createAsyncIterablePromise = <T extends string>(promise: Promise<T>, prompt: string, options: AIFunctionOptions = defaultOptions): AsyncIterablePromise<T> => {
+  const createAsyncIterablePromise = <T extends string>(
+    promise: Promise<T>,
+    prompt: string,
+    options: AIFunctionOptions = defaultOptions,
+  ): AsyncIterablePromise<T> => {
     const asyncIterable = {
-      [Symbol.asyncIterator]: asyncIterator
+      [Symbol.asyncIterator]: asyncIterator,
     }
     const callablePromise = Object.assign(
       async (opts?: AIFunctionOptions): Promise<T> => {
@@ -297,11 +316,16 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
         return templateFn(prompt, { ...options, ...opts }) as Promise<T>
       },
       {
-        then: (onfulfilled?: ((value: T) => T | PromiseLike<T>) | null | undefined, onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.then(onfulfilled, onrejected),
+        then: (
+          onfulfilled?: ((value: T) => T | PromiseLike<T>) | null | undefined,
+          /* eslint-disable @typescript-eslint/no-explicit-any */
+          onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined,
+        ): Promise<T> => promise.then(onfulfilled, onrejected),
         catch: (onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.catch(onrejected),
+        /* eslint-enable @typescript-eslint/no-explicit-any */
         finally: (onfinally?: (() => void) | null | undefined): Promise<T> => promise.finally(onfinally),
-        [Symbol.asyncIterator]: asyncIterable[Symbol.asyncIterator]
-      }
+        [Symbol.asyncIterator]: asyncIterable[Symbol.asyncIterator],
+      },
     )
     return callablePromise as AsyncIterablePromise<T>
   }
@@ -319,18 +343,20 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
         }
 
         const lastValue = values[values.length - 1]
-        const options = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
-          ? { ...defaultOptions, ...lastValue as AIFunctionOptions }
-          : defaultOptions
-        const actualValues = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
-          ? values.slice(0, -1)
-          : values
+        const options =
+          typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
+            ? { ...defaultOptions, ...(lastValue as AIFunctionOptions) }
+            : defaultOptions
+        const actualValues = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null ? values.slice(0, -1) : values
 
         const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
         return createAsyncIterablePromise(templateFn(prompt, options), prompt, options) as TemplateResult
       }
 
-      return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '', { ...defaultOptions, ...stringsOrOptions }) as TemplateResult
+      return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '', {
+        ...defaultOptions,
+        ...stringsOrOptions,
+      }) as TemplateResult
     },
     {
       withOptions: (opts: AIFunctionOptions = {}) => {
@@ -338,8 +364,8 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
         return templateFn(prompt, { ...defaultOptions, ...opts })
       },
       [Symbol.asyncIterator]: asyncIterator,
-      queue
-    }
+      queue,
+    },
   ) as BaseTemplateFunction
 
   return baseFn
