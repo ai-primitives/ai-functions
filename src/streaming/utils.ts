@@ -79,6 +79,10 @@ export async function* generateStreamingText(
   const model = options.model || getProvider()('gpt-4o-mini')
 
   try {
+    if (options.signal?.aborted) {
+      throw new Error('Stream was aborted')
+    }
+
     const { textStream } = streamText({
       model,
       prompt,
@@ -100,6 +104,9 @@ export async function* generateStreamingText(
 
     try {
       for await (const text of textStream) {
+        if (options.signal?.aborted) {
+          throw new Error('Stream was aborted')
+        }
         if (options.streaming?.onProgress) {
           options.streaming.onProgress(text)
         }
@@ -107,7 +114,7 @@ export async function* generateStreamingText(
       }
     } catch (error) {
       if (error instanceof Error) {
-        if (error.name === 'AbortError' || (error as any).code === 'ABORT_ERR') {
+        if (error.name === 'AbortError' || (error as any).code === 'ABORT_ERR' || options.signal?.aborted) {
           throw new Error('Stream was aborted')
         }
         throw error
@@ -116,7 +123,7 @@ export async function* generateStreamingText(
     }
   } catch (error) {
     if (error instanceof Error) {
-      if (error.name === 'AbortError' || (error as any).code === 'ABORT_ERR') {
+      if (error.name === 'AbortError' || (error as any).code === 'ABORT_ERR' || options.signal?.aborted) {
         throw new Error('Stream was aborted')
       } else if (error.name === 'TimeoutError') {
         throw new Error('Stream timed out')

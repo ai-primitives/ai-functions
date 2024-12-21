@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { openai } from '@ai-sdk/openai'
-import { streamObject, streamText, generateObject } from 'ai'
+import { streamObject, streamText, generateObject, NoObjectGeneratedError } from 'ai'
 import { z } from 'zod'
 
 describe('AI SDK Examples', () => {
@@ -90,6 +90,27 @@ describe('AI SDK Examples', () => {
       expect(Array.isArray(finalUpdate.recipe.ingredients)).toBe(true)
       expect(Array.isArray(finalUpdate.recipe.steps)).toBe(true)
     })
+
+    it('should handle streaming errors gracefully', async () => {
+      let error: Error | undefined
+      try {
+        const { elementStream } = streamObject({
+          model: undefined as any, // Force an error
+          output: 'array',
+          schema: z.string(),
+          prompt: 'Generate a list of items'
+        })
+
+        for await (const item of elementStream) {
+          console.log(item)
+        }
+      } catch (e) {
+        error = e as Error
+      }
+
+      expect(error).toBeDefined()
+      expect(error?.message).toBeDefined()
+    }, 30000)
   })
 
   describe('Generating Objects', () => {
@@ -125,5 +146,105 @@ describe('AI SDK Examples', () => {
       expect(['action', 'comedy', 'drama', 'horror', 'sci-fi']).toContain(object)
       expect(object).toBe('sci-fi')
     })
+
+    it('should handle object generation errors', async () => {
+      try {
+        await generateObject({
+          model,
+          schema: z.object({
+            invalidField: z.number().min(100).max(0) // Impossible constraint
+          }),
+          prompt: 'This should fail'
+        })
+        fail('Should have thrown an error')
+      } catch (error) {
+        expect(NoObjectGeneratedError.isInstance(error)).toBe(true)
+        if (NoObjectGeneratedError.isInstance(error)) {
+          expect(error.text).toBeDefined()
+          expect(error.response).toBeDefined()
+          expect(error.usage).toBeDefined()
+          expect(error.cause).toBeDefined()
+        }
+      }
+    })
+  })
+
+  describe('Advanced Features', () => {
+    it('should support streaming with tool calls', async () => {
+      const toolCalls: any[] = []
+      const toolResults: any[] = []
+
+      const { fullStream } = streamText({
+        model,
+        tools: {
+          cityAttractions: {
+            parameters: z.object({ city: z.string() }),
+            execute: async ({ city }) => ({
+              attractions: ['attraction1', 'attraction2', 'attraction3']
+            })
+          }
+        },
+        prompt: 'What are some San Francisco tourist attractions?'
+      })
+
+      for await (const part of fullStream) {
+        switch (part.type) {
+          case 'tool-call':
+            toolCalls.push(part)
+            break
+          case 'tool-result':
+            toolResults.push(part)
+            break
+        }
+      }
+
+      expect(toolCalls.length).toBeGreaterThan(0)
+      expect(toolResults.length).toBeGreaterThan(0)
+      expect(toolCalls[0].toolName).toBe('cityAttractions')
+    })
+
+    it('should support predicted outputs', async () => {
+      const existingCode = `
+interface User {
+  Username: string;
+  Password: string;
+}
+`
+      const { textStream } = streamText({
+        model: openai('gpt-4o-mini'),
+        messages: [
+          {
+            role: 'user',
+            content: 'Replace the Username property with an Email property.'
+          },
+          {
+            role: 'user',
+            content: existingCode
+          }
+        ],
+        experimental_providerMetadata: {
+          openai: {
+            prediction: {
+              type: 'content',
+              content: existingCode
+            }
+          }
+        },
+        seed: 12345
+      })
+
+      let text = ''
+      for await (const chunk of textStream) {
+        text += chunk
+      }
+
+      // Extract just the interface code
+      const interfaceMatch = text.match(/interface User {[^}]*}/s)
+      const interfaceCode = interfaceMatch ? interfaceMatch[0] : ''
+
+      expect(interfaceCode).toContain('interface User')
+      expect(interfaceCode).toContain('Email: string')
+      expect(interfaceCode).not.toContain('Username')
+    }, 30000)
   })
 }) 
