@@ -1,10 +1,6 @@
+import { LanguageModelV1 } from '@ai-sdk/provider'
 import { z } from 'zod'
-import type PQueue from 'p-queue'
-import type { LanguageModelV1 } from 'ai'
-
-export type Queue = Omit<PQueue, 'add'> & {
-  add<T>(fn: () => Promise<T> | T): Promise<T>
-}
+import PQueue from 'p-queue'
 
 export interface RetryOptions {
   maxRetries: number;
@@ -36,81 +32,34 @@ export interface RequestHandlingOptions {
   backoff?: number;
 }
 
-export interface StreamProgress {
-  type: 'token' | 'chunk' | 'complete';
-  tokensGenerated?: number;
-  totalTokens?: number;
-  chunk?: string;
-  estimatedTimeRemaining?: number;
-}
-
-export type ProgressCallback = (progress: StreamProgress) => void;
-
-export interface StreamingOptions {
-  onProgress?: ProgressCallback;
-  enableTokenCounting?: boolean;
-  estimateTimeRemaining?: boolean;
-}
+export type OutputFormat = 'object' | 'array' | 'enum' | 'no-schema';
 
 export interface AIFunctionOptions {
-  model?: LanguageModelV1
-  prompt?: string
-  outputFormat?: 'json'
-  schema?: z.ZodType | Record<string, unknown>
-  structuredOutputs?: boolean
-  system?: string
-  temperature?: number
-  maxTokens?: number
-  topP?: number
-  frequencyPenalty?: number
-  presencePenalty?: number
-  stop?: string | string[]
-  seed?: number
-  concurrency?: number
+  model?: LanguageModelV1;
+  prompt?: string;
+  system?: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  stop?: string | string[];
+  seed?: number;
   requestHandling?: RequestHandlingOptions;
-  streaming?: StreamingOptions;
+  outputFormat?: OutputFormat;
+  schema?: z.ZodType;
+  enum?: string[];
+  schemaName?: string;
+  schemaDescription?: string;
+  streaming?: {
+    onProgress?: (progress: { type: 'chunk'; chunk: string }) => void;
+    enableTokenCounting?: boolean;
+  };
 }
 
-export type AIFunction<T extends z.ZodTypeAny = z.ZodTypeAny> = {
-  (): Promise<{ schema: T }>
-  (args: z.infer<T>): Promise<z.infer<T>>
-  (args: z.infer<T>, options: AIFunctionOptions): Promise<z.infer<T>>
-  schema?: T
-  queue?: Queue
-}
+export type AI = AITemplateFunction;
 
-export type AsyncIterablePromise<T> = Promise<T> & AsyncIterable<T> & {
-  (options?: AIFunctionOptions): Promise<T>;
-  then: Promise<T>['then'];
-  catch: Promise<T>['catch'];
-  finally: Promise<T>['finally'];
-  [Symbol.asyncIterator]: () => AsyncIterator<T>;
-}
-
-export type TemplateResult = {
-  (options?: AIFunctionOptions): Promise<string>;
-  then: Promise<string>['then'];
-  catch: Promise<string>['catch'];
-  finally: Promise<string>['finally'];
-  [Symbol.asyncIterator]: () => AsyncIterator<string>;
-  call: (options?: AIFunctionOptions) => Promise<string>;
-}
-
-export interface BaseTemplateFunction {
-  (strings: TemplateStringsArray, ...values: unknown[]): TemplateResult;
-  (options?: AIFunctionOptions): TemplateResult;
-  [Symbol.asyncIterator]: () => AsyncIterator<string>;
-  queue?: Queue;
-  withOptions: (options?: AIFunctionOptions) => TemplateResult;
-}
-
-export type AITemplateFunction = BaseTemplateFunction & {
-  (strings: TemplateStringsArray, ...values: unknown[]): TemplateResult
-}
-
-export type AI = AITemplateFunction
-
-export type ListFunction = BaseTemplateFunction
+export type ListFunction = BaseTemplateFunction;
 
 export class AIRequestError extends Error {
   constructor(
@@ -121,4 +70,32 @@ export class AIRequestError extends Error {
     super(message);
     this.name = 'AIRequestError';
   }
+
+  static isInstance(error: unknown): error is AIRequestError {
+    return error instanceof AIRequestError;
+  }
 }
+
+export interface AIFunction<T extends z.ZodType> {
+  (args?: z.infer<T>, options?: AIFunctionOptions): Promise<z.infer<T>>;
+  schema: T;
+}
+
+export interface BaseTemplateFunction {
+  (strings: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult;
+  [Symbol.asyncIterator](): AsyncIterator<string>;
+  queue?: Queue;
+  withOptions(options?: AIFunctionOptions): BaseTemplateFunction;
+}
+
+export interface AITemplateFunction extends BaseTemplateFunction {
+  categorizeProduct(schema: Record<string, string>): AIFunction<z.ZodObject<any>>;
+}
+
+export type AsyncIterablePromise<T> = Promise<T> & AsyncIterable<T>;
+
+export type Queue = PQueue;
+
+export type TemplateResult = AsyncIterablePromise<string> & {
+  call(options?: AIFunctionOptions): Promise<string>;
+};

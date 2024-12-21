@@ -1,4 +1,4 @@
-import { generateText, streamText, generateObject, Output, type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool, type CallSettings, type Prompt, type TelemetrySettings, type LanguageModelV1ProviderMetadata } from 'ai'
+import { generateText, streamText, generateObject, Output, type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool, type CallSettings, type Prompt, type TelemetrySettings, type LanguageModelV1ProviderMetadata, type GenerateObjectOptions } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@ai-sdk/openai-compatible'
 import { LanguageModelV1 } from '@ai-sdk/provider'
@@ -51,33 +51,88 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
     }
 
     const requestHandler = createRequestHandler({ requestHandling: options.requestHandling });
+    const model = options.model || getProvider()('gpt-4o-mini', { structuredOutputs: true });
 
-    const result = await requestHandler.add(async () => {
-      return generateText({
-        model: options.model || getProvider()('gpt-4o-mini') as LanguageModelV1,
+    try {
+      const baseOptions = {
+        model,
         prompt: options.prompt || '',
-        maxRetries: 2,
-        experimental_output: Output.object({ schema }),
         system: options.system,
         temperature: options.temperature,
         maxTokens: options.maxTokens,
         topP: options.topP,
         frequencyPenalty: options.frequencyPenalty,
         presencePenalty: options.presencePenalty,
-        stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
-        seed: options.seed,
-      });
-    });
+        experimental_providerMetadata: {
+          openai: {
+            response_format: { type: 'json_object' }
+          }
+        }
+      } as const;
 
-    if (!result.experimental_output) {
-      throw new Error('No output received from model')
+      let result: GenerateObjectResult<JSONValue>;
+      
+      switch (options.outputFormat) {
+        case 'array': {
+          result = await requestHandler.add(() => generateObject({
+            ...baseOptions,
+            output: 'array' as const,
+            schema
+          }));
+          break;
+        }
+
+        case 'enum': {
+          if (!options.enum) {
+            throw new AIRequestError('Enum values must be provided for enum output format', undefined, false);
+          }
+          result = await requestHandler.add(() => generateObject({
+            ...baseOptions,
+            output: 'enum' as const,
+            enum: options.enum
+          }));
+          break;
+        }
+
+        case 'no-schema': {
+          result = await requestHandler.add(() => generateObject({
+            ...baseOptions,
+            output: 'no-schema' as const
+          }));
+          break;
+        }
+
+        default: {
+          // Default object output with schema
+          result = await requestHandler.add(() => generateObject({
+            ...baseOptions,
+            output: 'object' as const,
+            schema,
+            schemaName: options.schemaName,
+            schemaDescription: options.schemaDescription
+          }));
+        }
+      }
+
+      if (!result?.object) {
+        throw new AIRequestError('No output received from model', undefined, true);
+      }
+
+      return result.object;
+    } catch (error) {
+      if (error instanceof AIRequestError) {
+        throw error;
+      }
+      throw new AIRequestError(
+        'Failed to generate object',
+        error,
+        error instanceof Error && error.message.includes('retry')
+      );
     }
-
-    return result.experimental_output
   }
 
-  fn.schema = schema
-  return fn as AIFunction<T>
+  fn.schema = schema;
+  return fn as AIFunction<T>;
 }
 
 // PLACEHOLDER: createTemplateFunction implementation
