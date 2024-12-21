@@ -30,11 +30,11 @@ export const createMockTextResponse = (text: string): MockGenerateTextResult => 
   toolCalls: [],
   toolResults: [],
   steps: [],
-  experimental_output: {} as Record<string, unknown>,
+  experimental_output: null as JSONValue,
   experimental_providerMetadata: {},
 })
 
-export const createMockObjectResponse = (object: Record<string, unknown>): MockGenerateObjectResult => ({
+export const createMockObjectResponse = (object: JSONValue): MockGenerateObjectResult => ({
   text: JSON.stringify(object),
   object,
   usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
