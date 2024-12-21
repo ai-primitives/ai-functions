@@ -7,6 +7,14 @@ export interface AIFunctionOptions {
   outputFormat?: 'json'
   schema?: z.ZodType | Record<string, unknown>
   structuredOutputs?: boolean
+  systemMessage?: string
+  temperature?: number
+  maxTokens?: number
+  topP?: number
+  frequencyPenalty?: number
+  presencePenalty?: number
+  stop?: string | string[]
+  seed?: number
 }
 
 export type AIFunction<T extends z.ZodTypeAny = z.ZodTypeAny> = {

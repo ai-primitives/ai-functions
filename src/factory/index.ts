@@ -103,14 +103,37 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
   const templateFn = async (prompt: string, options: AIFunctionOptions = defaultOptions) => {
     currentPrompt = prompt
     
+    const modelParams = {
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      topP: options.topP,
+      frequencyPenalty: options.frequencyPenalty,
+      presencePenalty: options.presencePenalty,
+      stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+      seed: options.seed,
+    }
+    
     if (options.outputFormat === 'json') {
       const model = openai('gpt-4o-mini', { structuredOutputs: true })
       if (options.schema) {
-        const schema = options.schema instanceof z.ZodType ? options.schema : z.object(options.schema as z.ZodRawShape)
+        const schema = options.schema instanceof z.ZodType 
+          ? options.schema 
+          : z.object(Object.fromEntries(
+              Object.entries(options.schema as Record<string, string>).map(([key, type]) => [
+                key,
+                type === 'string' ? z.string() :
+                type === 'number' ? z.number() :
+                type === 'boolean' ? z.boolean() :
+                type === 'array' ? z.array(z.unknown()) :
+                type === 'object' ? z.record(z.string(), z.unknown()) :
+                z.unknown()
+              ])
+            ))
         const result = await generateObject({
           model,
           schema,
           prompt,
+          ...modelParams,
         })
         return JSON.stringify(result.object)
       } else {
@@ -118,6 +141,7 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
           model,
           output: 'no-schema',
           prompt,
+          ...modelParams,
         })
         return JSON.stringify(result.object)
       }
@@ -126,6 +150,7 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
     const result = await generateText({
       model: options.model || openai('gpt-4o-mini'),
       prompt,
+      ...modelParams,
       ...options,
     })
 
@@ -134,12 +159,23 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
 
   const asyncIterator = async function* (prompt: string) {
     currentPrompt = prompt
+    const modelParams = {
+      temperature: defaultOptions.temperature,
+      maxTokens: defaultOptions.maxTokens,
+      topP: defaultOptions.topP,
+      frequencyPenalty: defaultOptions.frequencyPenalty,
+      presencePenalty: defaultOptions.presencePenalty,
+      stopSequences: defaultOptions.stop ? Array.isArray(defaultOptions.stop) ? defaultOptions.stop : [defaultOptions.stop] : undefined,
+      seed: defaultOptions.seed,
+    }
+
     const result = await generateText({
       model: defaultOptions.model || openai('gpt-4o-mini'),
       prompt,
       maxRetries: 2,
       abortSignal: undefined,
       headers: undefined,
+      ...modelParams,
       ...defaultOptions,
     })
 
@@ -159,34 +195,36 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
     return Object.assign(promise, asyncIterable) as AsyncIterablePromise<T>
   }
 
-  const baseFn = (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): AsyncIterablePromise<string> => {
-    if (!stringsOrOptions) {
-      return createAsyncIterablePromise(templateFn('', defaultOptions), '')
-    }
-
-    if (Array.isArray(stringsOrOptions)) {
-      const strings = stringsOrOptions as TemplateStringsArray
-      if (strings.length - 1 !== values.length) {
-        throw new Error('Template literal slots must match provided values')
+  const baseFn = Object.assign(
+    (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): AsyncIterablePromise<string> => {
+      if (!stringsOrOptions) {
+        return createAsyncIterablePromise(templateFn('', defaultOptions), '')
       }
 
-      const lastValue = values[values.length - 1]
-      const options = typeof lastValue === 'object' && !Array.isArray(lastValue) ? lastValue as AIFunctionOptions : defaultOptions
-      values = typeof lastValue === 'object' && !Array.isArray(lastValue) ? values.slice(0, -1) : values
-      
-      const prompt = strings.reduce((acc, str, i) => acc + str + (values[i] || ''), '')
-      return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...options }), prompt)
+      if (Array.isArray(stringsOrOptions)) {
+        const strings = stringsOrOptions as TemplateStringsArray
+        if (strings.length - 1 !== values.length) {
+          throw new Error('Template literal slots must match provided values')
+        }
+
+        const lastValue = values[values.length - 1]
+        const options = typeof lastValue === 'object' && !Array.isArray(lastValue) ? lastValue as AIFunctionOptions : defaultOptions
+        values = typeof lastValue === 'object' && !Array.isArray(lastValue) ? values.slice(0, -1) : values
+        
+        const prompt = strings.reduce((acc, str, i) => acc + str + (values[i] || ''), '')
+        return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...options }), prompt)
+      }
+
+      return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '')
+    },
+    {
+      withOptions: (opts: AIFunctionOptions = {}) => {
+        const prompt = opts.prompt || currentPrompt || ''
+        return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...opts }), prompt)
+      },
+      [Symbol.asyncIterator]: (): AsyncIterator<string> => asyncIterator(currentPrompt || '')
     }
-
-    return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '')
-  }
-
-  baseFn.withOptions = (opts: AIFunctionOptions = {}) => {
-    const prompt = opts.prompt || currentPrompt || ''
-    return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...opts }), prompt)
-  }
-
-  baseFn[Symbol.asyncIterator] = () => asyncIterator(currentPrompt || '')
+  ) as BaseTemplateFunction
 
   return baseFn
 }

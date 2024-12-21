@@ -114,4 +114,80 @@ describe('createTemplateFunction', () => {
       expect(() => fn(templateStrings, 1, 2)).toThrow('Template literal slots must match provided values')
     })
   })
+
+  it('should generate text', async () => {
+    const fn = createTemplateFunction()
+    const result = await fn`Hello, how are you?`
+    expect(result).toBeDefined()
+    expect(typeof result).toBe('string')
+  })
+
+  it('should support streaming', async () => {
+    const fn = createTemplateFunction()
+    const chunks: string[] = []
+    for await (const chunk of fn`Hello, how are you?`) {
+      chunks.push(chunk)
+    }
+    expect(chunks.length).toBeGreaterThan(0)
+  })
+
+  it('should support JSON output with schema', async () => {
+    const fn = createTemplateFunction()
+    const result = await fn.withOptions({
+      outputFormat: 'json',
+      schema: {
+        name: 'string',
+        age: 'number'
+      },
+      prompt: 'Generate a person with a name and age'
+    })
+    expect(result).toBeDefined()
+    const parsed = JSON.parse(result)
+    expect(parsed).toHaveProperty('name')
+    expect(parsed).toHaveProperty('age')
+    expect(typeof parsed.name).toBe('string')
+    expect(typeof parsed.age).toBe('number')
+  })
+
+  it('should support JSON output without schema', async () => {
+    const fn = createTemplateFunction()
+    const result = await fn.withOptions({
+      outputFormat: 'json',
+      prompt: 'Generate a random object'
+    })
+    expect(result).toBeDefined()
+    expect(() => JSON.parse(result)).not.toThrow()
+  })
+
+  it('should support model parameters', async () => {
+    const fn = createTemplateFunction()
+    const result = await fn.withOptions({
+      temperature: 0.7,
+      maxTokens: 100,
+      topP: 0.9,
+      frequencyPenalty: 0.5,
+      presencePenalty: 0.5,
+      stop: ['END'],
+      seed: 42
+    })
+    expect(result).toBeDefined()
+    expect(typeof result).toBe('string')
+  })
+
+  it('should support array of stop sequences', async () => {
+    const fn = createTemplateFunction()
+    const result = await fn.withOptions({
+      stop: ['END', 'STOP']
+    })
+    expect(result).toBeDefined()
+    expect(typeof result).toBe('string')
+  })
+
+  it('should support deterministic output with seed', async () => {
+    const fn = createTemplateFunction()
+    const prompt = 'Generate a random number between 1 and 10'
+    const result1 = await fn.withOptions({ seed: 42, prompt })
+    const result2 = await fn.withOptions({ seed: 42, prompt })
+    expect(result1).toBe(result2)
+  })
 })
