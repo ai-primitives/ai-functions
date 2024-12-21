@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createTemplateFunction } from '../index'
-import type { AsyncIterablePromise } from '../../types'
+import type { AIFunctionOptions } from '../../types'
 
 describe('createTemplateFunction', () => {
   describe('output format handling', () => {
@@ -14,25 +14,25 @@ describe('createTemplateFunction', () => {
       const fn = createTemplateFunction({
         outputFormat: 'json',
         schema,
-      })
+      } as AIFunctionOptions)
 
-      // Use template literal syntax properly
       const result = await fn`Generate a person's info`
-      expect(result.object).toBeDefined()
-      expect(() => schema.parse(result.object)).not.toThrow()
+      const parsed = schema.parse(result)
+      expect(parsed).toBeDefined()
+      expect(typeof parsed.name).toBe('string')
+      expect(typeof parsed.age).toBe('number')
     })
   })
 
   describe('streaming support', () => {
     it('should support streaming responses', async () => {
       const fn = createTemplateFunction()
-      const result = await fn`List some items`
+      const stream = fn`List some items`
 
       const chunks = ['Item 1', 'Item 2', 'Item 3']
       const collected: string[] = []
 
-      // Handle AsyncIterablePromise correctly
-      for await (const chunk of result) {
+      for await (const chunk of stream) {
         collected.push(chunk.trim())
       }
 

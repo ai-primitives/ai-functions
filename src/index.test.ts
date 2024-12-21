@@ -1,23 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { ai } from './index'
 import { z } from 'zod'
-import type { AsyncIterablePromise } from './types'
+import type { AIFunctionOptions } from './types'
 
 describe('ai template tag', () => {
   it('should support basic template literals', async () => {
     const name = 'World'
     const result = await ai`Hello ${name}`
-    expect(result.text).toBeDefined()
-    expect(typeof result.text).toBe('string')
+    expect(typeof result).toBe('string')
   })
 
   it('should support configuration object', async () => {
     const name = 'World'
-    const result = await ai`Hello ${name}`({
+    const config: AIFunctionOptions = {
       model: 'gpt-3.5-turbo',
-    })
-    expect(result.text).toBeDefined()
-    expect(typeof result.text).toBe('string')
+    }
+    const result = await ai`Hello ${name}${config}`
+    expect(typeof result).toBe('string')
   })
 
   it('should support JSON output with schema', async () => {
@@ -26,20 +25,22 @@ describe('ai template tag', () => {
       timestamp: z.number(),
     })
 
-    const result = await ai`Generate a greeting`({
+    const config: AIFunctionOptions = {
       outputFormat: 'json',
       schema,
-    })
-
-    expect(result.object).toBeDefined()
-    expect(() => schema.parse(result.object)).not.toThrow()
+    }
+    const result = await ai`Generate a greeting${config}`
+    const parsed = schema.parse(result)
+    expect(parsed).toBeDefined()
+    expect(typeof parsed.greeting).toBe('string')
+    expect(typeof parsed.timestamp).toBe('number')
   })
 
   it('should support streaming responses', async () => {
     const chunks = ['Item 1', 'Item 2', 'Item 3']
     const collected: string[] = []
 
-    const stream: AsyncIterablePromise<string> = ai`List some items`
+    const stream = ai`List some items`
     for await (const chunk of stream) {
       collected.push(chunk.trim())
     }
