@@ -75,7 +75,7 @@ export class RequestHandler {
           new Promise((_, reject) => 
             setTimeout(() => reject(new AIRequestError('Request timeout', undefined, true)), this.timeout)
           ),
-        ]);
+        ]) as T;
 
         return result;
       } catch (error) {
