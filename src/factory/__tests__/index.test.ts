@@ -14,12 +14,12 @@ describe('createTemplateFunction', () => {
         age: z.number(),
       })
 
-      const templateFn = createTemplateFunction({
+      const fn = createTemplateFunction({
         outputFormat: 'json',
         schema,
       })
 
-      const result = await templateFn`Generate a person's info`()
+      const result = await fn(['Generate a person\'s info'])
       expect(result.object).toBeDefined()
       expect(() => schema.parse(result.object)).not.toThrow()
     })
@@ -27,8 +27,8 @@ describe('createTemplateFunction', () => {
 
   describe('streaming support', () => {
     it('should support streaming responses', async () => {
-      const templateFn = createTemplateFunction()
-      const result = await templateFn`List some items`()
+      const fn = createTemplateFunction()
+      const result = await fn(['List some items'])
 
       const chunks = ['Item 1', 'Item 2', 'Item 3']
       const collected: string[] = []
