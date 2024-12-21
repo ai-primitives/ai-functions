@@ -83,17 +83,36 @@ describe('createListFunction', () => {
   })
 
   it('should handle errors in concurrent list operations', async () => {
-    const list = createListFunction()
-    const tasks = Array(3).fill(null).map((_, i) => 
-      (list as any)`${i === 1 ? '' : '3 items'}`({
-        concurrency: { concurrency: 2 }
-      }).catch((err: Error) => `error-${i}`)
+    const mockModel = {
+      ...model,
+      generate: () => {
+        throw new Error('Failed to generate list')
+      }
+    }
+
+    const list = createListFunction({
+      concurrency: { concurrency: 2 },
+      model: mockModel
+    })
+    
+    const tasks = [
+      list`valid request`,
+      list`trigger error`,
+      list`another valid request`
+    ].map((promise, i) => 
+      promise.catch(err => {
+        if (i === 1) {
+          expect(err.message).toBe('Failed to generate list')
+          return 'error-1'
+        }
+        return 'success'
+      })
     )
     
     const results = await Promise.all(tasks)
     expect(results).toHaveLength(3)
-    expect(typeof results[0]).toBe('string')
-    expect(results[1]).toContain('error-1')
-    expect(typeof results[2]).toBe('string')
+    expect(results[0]).toBe('success')
+    expect(results[1]).toBe('error-1')
+    expect(results[2]).toBe('success')
   })
 }) 

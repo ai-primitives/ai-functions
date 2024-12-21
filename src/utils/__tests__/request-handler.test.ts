@@ -1,10 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { RequestHandler, createRequestHandler } from '../request-handler'
 import { AIRequestError } from '../../types'
 
 describe('RequestHandler', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('should successfully execute an operation', async () => {
@@ -31,7 +35,14 @@ describe('RequestHandler', () => {
       .mockRejectedValueOnce(new Error('Another temporary error'))
       .mockResolvedValueOnce('success')
 
-    const result = await handler.execute(operation)
+    const promise = handler.execute(operation)
+    
+    // Advance time for first retry
+    await vi.advanceTimersByTimeAsync(100)
+    // Advance time for second retry
+    await vi.advanceTimersByTimeAsync(200)
+    
+    const result = await promise
     expect(result).toBe('success')
     expect(operation).toHaveBeenCalledTimes(3)
   })
@@ -65,11 +76,21 @@ describe('RequestHandler', () => {
   it('should handle timeouts', async () => {
     const handler = createRequestHandler({
       timeout: 1000,
+      retry: {
+        maxRetries: 0
+      }
     })
 
-    const operation = () => new Promise(resolve => setTimeout(resolve, 2000))
+    const operation = vi.fn(() => new Promise(resolve => {
+      setTimeout(resolve, 2000, 'delayed result')
+    }))
 
-    await expect(handler.execute(operation)).rejects.toThrow(AIRequestError)
+    const promise = handler.execute(operation)
+    
+    // Advance time past the timeout
+    await vi.runAllTimersAsync()
+    
+    await expect(promise).rejects.toThrow('Request timeout')
   })
 
   it('should not retry on non-retryable errors', async () => {
@@ -93,8 +114,14 @@ describe('RequestHandler', () => {
     })
 
     const operation = vi.fn().mockRejectedValue(new Error('Persistent error'))
-
-    await expect(handler.execute(operation)).rejects.toThrow('Failed after 3 attempts')
+    const promise = handler.execute(operation)
+    
+    // Advance time for all retries
+    await vi.advanceTimersByTimeAsync(100)
+    await vi.advanceTimersByTimeAsync(200)
+    await vi.advanceTimersByTimeAsync(400)
+    
+    await expect(promise).rejects.toThrow('Failed after 3 attempts')
     expect(operation).toHaveBeenCalledTimes(3)
   })
 }) 
