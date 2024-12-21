@@ -68,10 +68,16 @@ export type AIFunction<T extends z.ZodTypeAny = z.ZodTypeAny> = {
   queue?: Queue
 }
 
-export type AsyncIterablePromise<T> = Promise<T> & AsyncIterable<string>
+export type AsyncIterablePromise<T> = Promise<T> & AsyncIterable<string> & {
+  (options: AIFunctionOptions): Promise<T>
+}
+
+export type TemplateResult = Promise<string> & AsyncIterable<string> & {
+  (options: AIFunctionOptions): Promise<string>
+}
 
 export interface BaseTemplateFunction {
-  <T extends unknown[]>(strings: TemplateStringsArray, ...values: T): AsyncIterablePromise<string>
+  <T extends unknown[]>(strings: TemplateStringsArray, ...values: T): TemplateResult
   (options?: AIFunctionOptions): AsyncIterablePromise<string>
   withOptions: (options?: AIFunctionOptions) => AsyncIterablePromise<string>
   [Symbol.asyncIterator](): AsyncIterator<string>
@@ -79,7 +85,7 @@ export interface BaseTemplateFunction {
 }
 
 export type AITemplateFunction = BaseTemplateFunction & {
-  (strings: TemplateStringsArray, ...values: unknown[]): AsyncIterablePromise<string>
+  (strings: TemplateStringsArray, ...values: unknown[]): TemplateResult
   withOptions: (options?: AIFunctionOptions) => AsyncIterablePromise<string>
 }
 

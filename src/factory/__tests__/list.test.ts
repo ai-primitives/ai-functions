@@ -7,7 +7,7 @@ const model = openai('gpt-4o-mini')
 describe('createListFunction', () => {
   it('should generate a list of items', async () => {
     const list = createListFunction()
-    const result = await list`fun things to do in Miami`
+    const result = await list`fun things to do in Miami`({ model })
     expect(result).toBeDefined()
     expect(typeof result).toBe('string')
     expect(result.split('\n').length).toBeGreaterThan(0)
@@ -24,10 +24,7 @@ describe('createListFunction', () => {
 
   it('should support configuration options', async () => {
     const list = createListFunction()
-    const result = await list.withOptions({
-      model,
-      prompt: 'fun things to do in Miami'
-    })
+    const result = await list`fun things to do in Miami`({ model })
     expect(result).toBeDefined()
     expect(typeof result).toBe('string')
     expect(result.split('\n').length).toBeGreaterThan(0)
@@ -35,7 +32,7 @@ describe('createListFunction', () => {
 
   it('should handle empty input', async () => {
     const list = createListFunction()
-    const result = await list``
+    const result = await list``({ model })
     expect(result).toBeDefined()
     expect(typeof result).toBe('string')
   })
@@ -44,10 +41,7 @@ describe('createListFunction', () => {
     const list = createListFunction()
     const topics = ['cities', 'foods', 'sports']
     const tasks = topics.map(topic => 
-      list.withOptions({
-        prompt: `5 popular ${topic}`,
-        concurrency: 2
-      })
+      list`5 popular ${topic}`({ model, concurrency: 2 })
     )
     
     const results = await Promise.all(tasks)
@@ -61,10 +55,7 @@ describe('createListFunction', () => {
     const list = createListFunction()
     const topics = ['movies', 'books', 'games']
     const streams = topics.map(topic => 
-      list.withOptions({
-        prompt: `3 popular ${topic}`,
-        concurrency: 2
-      })
+      list`3 popular ${topic}`({ model, concurrency: 2 })
     )
     
     const results = await Promise.all(
@@ -87,9 +78,9 @@ describe('createListFunction', () => {
   it('should handle errors in concurrent list operations', async () => {
     const list = createListFunction()
     const tasks = [
-      list.withOptions({ prompt: 'valid request' }),
-      list.withOptions({ prompt: 'trigger error' }),
-      list.withOptions({ prompt: 'another valid request' })
+      list`valid request`({ model }),
+      list`trigger error`({ model }),
+      list`another valid request`({ model })
     ].map(promise => 
       promise.catch(err => {
         // If any request fails, we'll handle it gracefully
