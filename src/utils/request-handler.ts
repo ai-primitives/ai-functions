@@ -100,8 +100,17 @@ export class RequestHandler {
         } catch (error) {
           lastError = error as Error;
           
+          // Don't retry if the error is explicitly marked as non-retryable
+          if (error instanceof AIRequestError && error.retryable === false) {
+            throw error;
+          }
+
           if (attempt === this.retryOptions.maxRetries) {
-            throw lastError;
+            throw new AIRequestError(
+              `Failed after ${attempt + 1} attempts: ${lastError.message}`,
+              undefined,
+              false
+            );
           }
 
           await new Promise(resolve => setTimeout(resolve, delay));
