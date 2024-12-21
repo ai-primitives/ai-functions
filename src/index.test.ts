@@ -2,20 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { ai } from './index'
 import { z } from 'zod'
 import type { AIFunctionOptions } from './types'
-import type { LanguageModelV1 } from '@ai-sdk/provider'
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { openai } from '@ai-sdk/openai'
 
 describe('ai template tag', () => {
-  const openaiProvider = createOpenAICompatible({
-    baseURL: process.env.AI_GATEWAY?.replace('%', ''),
-    name: 'openai',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
-    }
-  })
-
-  const model: LanguageModelV1 = openaiProvider.chatModel('gpt-4o-mini')
+  const model = openai('gpt-4o-mini', { structuredOutputs: true })
 
   it('should support basic template literals', async () => {
     const name = 'World'

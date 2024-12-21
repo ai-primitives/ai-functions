@@ -97,16 +97,10 @@ export function createTextResponse(result: GenerateResult): Response {
   })
 }
 
-export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTemplateFunction {
+export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): BaseTemplateFunction {
   let currentPrompt: string | undefined
-  const provider = getProvider()
-  const DEFAULT_MODEL = provider('gpt-4o-mini')
 
-  if (options.outputFormat && options.outputFormat !== 'json') {
-    throw new Error('Invalid output format. Only JSON is supported')
-  }
-
-  const templateFn = async (prompt: string) => {
+  const templateFn = async (prompt: string, options: AIFunctionOptions = defaultOptions) => {
     currentPrompt = prompt
     
     if (options.outputFormat === 'json') {
@@ -130,7 +124,7 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
     }
 
     const result = await generateText({
-      model: openai('gpt-4o-mini'),
+      model: options.model || openai('gpt-4o-mini'),
       prompt,
       ...options,
     })
@@ -138,99 +132,61 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
     return result.text
   }
 
-  templateFn.withOptions = async (opts: AIFunctionOptions = {}) => {
-    currentPrompt = opts.prompt || ''
-    return templateFn(currentPrompt)
-  }
-
   const asyncIterator = async function* (prompt: string) {
     currentPrompt = prompt
     const result = await generateText({
-      model: options.model || DEFAULT_MODEL,
+      model: defaultOptions.model || openai('gpt-4o-mini'),
       prompt,
       maxRetries: 2,
       abortSignal: undefined,
       headers: undefined,
-      ...options,
-      ...(options.outputFormat && {
-        prompt: `${prompt}\n\nPlease format the response as JSON${options.schema ? ` following this schema:\n${JSON.stringify(options.schema, null, 2)}` : ''}`,
-        ...(options.outputFormat === 'json' &&
-          options.schema && {
-            experimental_output: Output.object({
-              schema: options.schema instanceof z.ZodType ? options.schema : z.object(options.schema as z.ZodRawShape),
-            }),
-          }),
-      }),
+      ...defaultOptions,
     })
-
-    if (!result || typeof result !== 'object') {
-      throw new Error('Invalid response format')
-    }
 
     if (isStreamingResult(result)) {
       for await (const chunk of result.experimental_stream) {
-        if (options.outputFormat === 'json') {
-          yield chunk
-        } else {
-          const lines = chunk.split('\n')
-          for (const line of lines) {
-            if (line) yield line
-          }
-        }
-      }
-    } else if ('experimental_output' in result && options.outputFormat === 'json') {
-      yield JSON.stringify(result.experimental_output)
-    } else if ('text' in result) {
-      const lines = result.text.split('\n')
-      for (const line of lines) {
-        if (line) yield line
+        yield chunk
       }
     } else {
-      throw new Error('No text available in response')
+      yield result.text
     }
   }
 
-  const createAsyncIterablePromise = <T>(promise: Promise<T>): AsyncIterablePromise<T> => {
+  const createAsyncIterablePromise = <T>(promise: Promise<T>, prompt: string): AsyncIterablePromise<T> => {
     const asyncIterable = {
-      [Symbol.asyncIterator]: () => asyncIterator(currentPrompt || ''),
+      [Symbol.asyncIterator]: () => asyncIterator(prompt)
     }
     return Object.assign(promise, asyncIterable) as AsyncIterablePromise<T>
   }
 
-  const baseFn = function (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): AsyncIterablePromise<string> {
+  const baseFn = (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): AsyncIterablePromise<string> => {
     if (!stringsOrOptions) {
-      throw new Error('Template strings or options are required')
+      return createAsyncIterablePromise(templateFn('', defaultOptions), '')
     }
 
-    if (!Array.isArray(stringsOrOptions)) {
-      const opts = stringsOrOptions as AIFunctionOptions
-      if (typeof opts !== 'object' || opts === null) {
-        throw new Error('Options must be an object')
+    if (Array.isArray(stringsOrOptions)) {
+      const strings = stringsOrOptions as TemplateStringsArray
+      if (strings.length - 1 !== values.length) {
+        throw new Error('Template literal slots must match provided values')
       }
-      currentPrompt = opts.prompt || ''
-      return createAsyncIterablePromise(templateFn.withOptions(opts))
+
+      const lastValue = values[values.length - 1]
+      const options = typeof lastValue === 'object' && !Array.isArray(lastValue) ? lastValue as AIFunctionOptions : defaultOptions
+      values = typeof lastValue === 'object' && !Array.isArray(lastValue) ? values.slice(0, -1) : values
+      
+      const prompt = strings.reduce((acc, str, i) => acc + str + (values[i] || ''), '')
+      return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...options }), prompt)
     }
 
-    if (stringsOrOptions.length - 1 !== values.length) {
-      throw new Error('Template literal slots must match provided values')
-    }
-
-    const prompt = String.raw({ raw: stringsOrOptions }, ...values)
-    currentPrompt = prompt
-    return createAsyncIterablePromise(templateFn(prompt))
-  } as BaseTemplateFunction
-
-  Object.defineProperty(baseFn, Symbol.asyncIterator, {
-    value: function () {
-      return asyncIterator(currentPrompt || '')
-    },
-    writable: true,
-    configurable: true,
-  })
-
-  baseFn.withOptions = (opts?: AIFunctionOptions) => {
-    return createAsyncIterablePromise(templateFn.withOptions(opts))
+    return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '')
   }
+
+  baseFn.withOptions = (opts: AIFunctionOptions = {}) => {
+    const prompt = opts.prompt || currentPrompt || ''
+    return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...opts }), prompt)
+  }
+
+  baseFn[Symbol.asyncIterator] = () => asyncIterator(currentPrompt || '')
 
   return baseFn
 }
