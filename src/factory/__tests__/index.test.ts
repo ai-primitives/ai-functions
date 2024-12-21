@@ -327,4 +327,68 @@ describe('createTemplateFunction', () => {
       expect(result2.result).toBe('task-2')
     })
   })
+
+  describe('composable functions', () => {
+    beforeEach(() => {
+      process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key'
+    })
+
+    it('should support composing list and ai functions', async () => {
+      const { ai, list } = await import('../..')
+      
+      const listBlogPosts = (count: number, topic: string) => 
+        list`${count} blog post titles about ${topic}`({
+          model: openai('gpt-4o-mini')
+        })
+      
+      const writeBlogPost = (title: string) => 
+        ai`write a blog post in markdown starting with "# ${title}"`({
+          model: openai('gpt-4o-mini')
+        })
+
+      const titles = await listBlogPosts(2, 'AI testing')
+      expect(Array.isArray(titles)).toBe(true)
+      expect(titles.length).toBe(2)
+      
+      const content = await writeBlogPost(titles[0])
+      expect(typeof content).toBe('string')
+      expect(content.startsWith('# ')).toBe(true)
+    })
+
+    it('should support composition with async generators', async () => {
+      const { ai, list } = await import('../..')
+      
+      const listBlogPosts = (count: number, topic: string) => 
+        list`${count} blog post titles about ${topic}`({
+          model: openai('gpt-4o-mini')
+        })
+      
+      const writeBlogPost = (title: string) => 
+        ai`write a blog post in markdown starting with "# ${title}"`({
+          model: openai('gpt-4o-mini')
+        })
+
+      async function* writeBlog(count: number, topic: string) {
+        const titles = await listBlogPosts(count, topic)
+        for (const title of titles) {
+          const content = await writeBlogPost(title)
+          yield { title, content }
+        }
+      }
+
+      const posts = []
+      for await (const post of writeBlog(2, 'software testing')) {
+        posts.push(post)
+      }
+
+      expect(posts.length).toBe(2)
+      posts.forEach(post => {
+        expect(post).toHaveProperty('title')
+        expect(post).toHaveProperty('content')
+        expect(typeof post.title).toBe('string')
+        expect(typeof post.content).toBe('string')
+        expect(post.content.startsWith('# ')).toBe(true)
+      })
+    })
+  })
 })
