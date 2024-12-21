@@ -97,8 +97,12 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
     }
 
     const performRequest = async function* () {
+      if (!options.model) {
+        throw new Error('Model is required for streaming')
+      }
+
       try {
-        const model = options.model || openai('gpt-4o-mini')
+        const model = options.model
         const streamOptions = {
           model,
           output: 'array' as const,
@@ -119,6 +123,9 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
         for await (const item of elementStream) {
           if (options.signal?.aborted) {
             throw new Error('Stream was aborted')
+          }
+          if (options.streaming?.onProgress) {
+            options.streaming.onProgress(item)
           }
           yield item
         }
@@ -177,104 +184,142 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
   function createTemplateResult(prompt: string, options: AIFunctionOptions): TemplateResult {
     const promise = templateFn(prompt, options)
 
-    // Create the base result object with async iterator
-    const baseResult = {
-      call: (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts }),
-      then: (onfulfilled?: ((value: string) => string | PromiseLike<string>) | null | undefined) =>
-        promise.then(onfulfilled),
-      catch: (onrejected?: ((reason: any) => string | PromiseLike<string>) | null | undefined) =>
-        promise.catch(onrejected),
-      finally: (onfinally?: (() => void) | null | undefined) =>
-        promise.finally(onfinally),
-      [Symbol.asyncIterator]: () => asyncIterator(prompt, options)
+    // Create a function that is both callable and async iterable
+    const fn = async function(opts?: AIFunctionOptions) {
+      return templateFn(prompt, { ...options, ...opts })
     }
 
-    // Create a proxy that handles both function calls and async iteration
-    const result = new Proxy(
-      async function(opts?: AIFunctionOptions) {
-        return templateFn(prompt, { ...options, ...opts })
+    // Add async iterator and promise methods
+    Object.defineProperties(fn, {
+      [Symbol.asyncIterator]: {
+        value: () => asyncIterator(prompt, options),
+        writable: false,
+        enumerable: false,
+        configurable: true
       },
-      {
-        get(target, prop, receiver) {
-          if (prop === Symbol.asyncIterator) {
-            return () => asyncIterator(prompt, options)
-          }
-          return baseResult[prop as keyof typeof baseResult] ?? target[prop as keyof typeof target]
-        }
+      then: {
+        value: promise.then.bind(promise),
+        writable: false,
+        enumerable: false,
+        configurable: true
+      },
+      catch: {
+        value: promise.catch.bind(promise),
+        writable: false,
+        enumerable: false,
+        configurable: true
+      },
+      finally: {
+        value: promise.finally.bind(promise),
+        writable: false,
+        enumerable: false,
+        configurable: true
+      },
+      call: {
+        value: (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts }),
+        writable: false,
+        enumerable: false,
+        configurable: true
       }
-    ) as unknown as TemplateResult
-
-    // Make the result a promise and ensure it has the async iterator
-    Object.setPrototypeOf(result, Promise.prototype)
-    Object.assign(result, {
-      [Symbol.asyncIterator]: () => asyncIterator(prompt, options)
     })
+
+    // Make sure the function is a proper async iterable and callable
+    const result = new Proxy(fn, {
+      get(target: any, prop: string | symbol) {
+        if (prop === Symbol.asyncIterator) {
+          return () => asyncIterator(prompt, options)
+        }
+        return Reflect.get(target, prop)
+      },
+      apply(target: any, thisArg: any, args: [AIFunctionOptions?]) {
+        return Reflect.apply(target, thisArg, args)
+      }
+    }) as unknown as TemplateResult
 
     return result
   }
 
   function createBaseFunction(): BaseTemplateFunction {
-    const fn = Object.assign(
-      function(stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult {
-        if (!stringsOrOptions) {
-          return createTemplateResult('', defaultOptions)
-        }
-
-        if (Array.isArray(stringsOrOptions)) {
-          const strings = stringsOrOptions as TemplateStringsArray
-          if (strings.length - 1 !== values.length) {
-            throw new Error('Template literal slots must match provided values')
-          }
-
-          const lastValue = values[values.length - 1]
-          const options = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
-            ? { ...defaultOptions, ...lastValue as AIFunctionOptions }
-            : defaultOptions
-          const actualValues = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
-            ? values.slice(0, -1)
-            : values
-
-          const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
-          currentPrompt = prompt
-
-          // Create a function that returns a promise and has async iterator
-          const templateResult = async function(opts?: AIFunctionOptions) {
-            return templateFn(prompt, { ...options, ...opts })
-          } as unknown as TemplateResult
-
-          // Add async iterator
-          Object.defineProperty(templateResult, Symbol.asyncIterator, {
-            value: () => asyncIterator(prompt, options),
-            writable: false,
-            enumerable: false,
-            configurable: true
-          })
-
-          // Add promise methods
-          const promise = templateFn(prompt, options)
-          Object.assign(templateResult, {
-            then: promise.then.bind(promise),
-            catch: promise.catch.bind(promise),
-            finally: promise.finally.bind(promise),
-            call: (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts })
-          })
-
-          return templateResult
-        }
-
-        const options = { ...defaultOptions, ...stringsOrOptions }
-        return createTemplateResult('', options)
-      },
-      {
-        withOptions: (opts?: AIFunctionOptions) => {
-          const mergedOptions = { ...defaultOptions, ...opts }
-          return createTemplateResult(currentPrompt || '', mergedOptions)
-        },
-        queue: currentQueue
+    const fn = function(stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult {
+      if (!stringsOrOptions) {
+        return createTemplateResult('', defaultOptions)
       }
-    ) as BaseTemplateFunction
 
-    return fn
+      if (Array.isArray(stringsOrOptions)) {
+        const strings = stringsOrOptions as TemplateStringsArray
+        if (strings.length - 1 !== values.length) {
+          throw new Error('Template literal slots must match provided values')
+        }
+
+        const lastValue = values[values.length - 1]
+        const options = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
+          ? { ...defaultOptions, ...lastValue as AIFunctionOptions }
+          : defaultOptions
+        const actualValues = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
+          ? values.slice(0, -1)
+          : values
+
+        const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
+        currentPrompt = prompt
+
+        // Create a function that is both callable and async iterable
+        const templateFnResult = async function(opts?: AIFunctionOptions) {
+          return templateFn(prompt, { ...options, ...opts })
+        }
+
+        // Add async iterator and promise methods
+        const promise = templateFn(prompt, options)
+        const result = new Proxy(templateFnResult, {
+          get(target: any, prop: string | symbol) {
+            if (prop === Symbol.asyncIterator) {
+              return () => asyncIterator(prompt, options)
+            }
+            if (prop === 'then') {
+              return promise.then.bind(promise)
+            }
+            if (prop === 'catch') {
+              return promise.catch.bind(promise)
+            }
+            if (prop === 'finally') {
+              return promise.finally.bind(promise)
+            }
+            if (prop === 'call') {
+              return (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts })
+            }
+            return Reflect.get(target, prop)
+          },
+          apply(target: any, thisArg: any, args: [AIFunctionOptions?]) {
+            const [opts] = args
+            const mergedOptions = { ...options, ...opts }
+            const result = {
+              [Symbol.asyncIterator]: () => asyncIterator(prompt, mergedOptions),
+              then: (onfulfilled?: ((value: string) => string | PromiseLike<string>) | null | undefined) =>
+                templateFn(prompt, mergedOptions).then(onfulfilled),
+              catch: (onrejected?: ((reason: any) => string | PromiseLike<string>) | null | undefined) =>
+                templateFn(prompt, mergedOptions).catch(onrejected),
+              finally: (onfinally?: (() => void) | null | undefined) =>
+                templateFn(prompt, mergedOptions).finally(onfinally),
+              call: (opts?: AIFunctionOptions) => templateFn(prompt, { ...mergedOptions, ...opts })
+            }
+            return result
+          }
+        }) as unknown as TemplateResult
+
+        return result
+      }
+
+      const options = { ...defaultOptions, ...stringsOrOptions }
+      return createTemplateResult('', options)
+    }
+
+    // Add the withOptions method and queue property
+    return Object.assign(fn, {
+      withOptions: (opts?: AIFunctionOptions) => {
+        const mergedOptions = { ...defaultOptions, ...opts }
+        return createTemplateResult(currentPrompt || '', mergedOptions)
+      },
+      queue: currentQueue
+    }) as BaseTemplateFunction
   }
 
   return createBaseFunction()
