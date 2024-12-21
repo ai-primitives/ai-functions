@@ -5,6 +5,12 @@ import type { AIFunctionOptions } from './types'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
 describe('ai template tag', () => {
+  const model = createOpenAICompatible({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.AI_GATEWAY,
+    defaultModel: 'gpt-3.5-turbo',
+  })
+
   it('should support basic template literals', async () => {
     const name = 'World'
     const result = await ai`Hello ${name}`
@@ -14,9 +20,7 @@ describe('ai template tag', () => {
   it('should support configuration object', async () => {
     const name = 'World'
     const config: AIFunctionOptions = {
-      model: createOpenAICompatible({
-        model: 'gpt-3.5-turbo',
-      }),
+      model,
     }
     const result = await ai`Hello ${name}${config}`
     expect(typeof result).toBe('string')
@@ -29,6 +33,7 @@ describe('ai template tag', () => {
     })
 
     const config: AIFunctionOptions = {
+      model,
       outputFormat: 'json',
       schema,
     }
