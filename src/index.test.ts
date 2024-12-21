@@ -7,14 +7,15 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
 describe('ai template tag', () => {
   const openaiProvider = createOpenAICompatible({
-    baseURL: process.env.AI_GATEWAY,
+    baseURL: process.env.AI_GATEWAY?.replace('%', ''),
+    name: 'openai',
     headers: {
       'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
       'Content-Type': 'application/json'
     }
   })
 
-  const model: LanguageModelV1 = openaiProvider.chatModel('gpt-4')
+  const model: LanguageModelV1 = openaiProvider.chatModel('gpt-4o-mini')
 
   it('should support basic template literals', async () => {
     const name = 'World'
@@ -43,10 +44,10 @@ describe('ai template tag', () => {
     const config: AIFunctionOptions = {
       model,
       outputFormat: 'json',
-      schema,
+      schema
     }
-    const result = await ai`Generate a greeting${config}`
-    const parsed = schema.parse(result)
+    const result = await ai`Generate a greeting with the current timestamp${config}`
+    const parsed = schema.parse(JSON.parse(result))
     expect(parsed).toBeDefined()
     expect(typeof parsed.greeting).toBe('string')
     expect(typeof parsed.timestamp).toBe('number')

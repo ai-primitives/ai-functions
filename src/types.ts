@@ -6,6 +6,7 @@ export interface AIFunctionOptions {
   prompt?: string
   outputFormat?: 'json'
   schema?: z.ZodType | Record<string, unknown>
+  structuredOutputs?: boolean
 }
 
 export type AIFunction<T extends z.ZodTypeAny = z.ZodTypeAny> = {

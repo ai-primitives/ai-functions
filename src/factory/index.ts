@@ -1,4 +1,4 @@
-import { generateText, Output, type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
+import { generateText, generateObject, Output, type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@ai-sdk/openai-compatible'
 import { LanguageModelV1 } from '@ai-sdk/provider'
@@ -42,7 +42,7 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
     }
 
     const result = await generateText({
-      model: getProvider()('gpt-4') as LanguageModelV1,
+      model: options.model || getProvider()('gpt-4o-mini') as LanguageModelV1,
       prompt: options.prompt || '',
       maxRetries: 2,
       experimental_output: Output.object({ schema: schema }),
@@ -73,6 +73,10 @@ function getProvider() {
     ? createOpenAICompatible({
         baseURL: gateway,
         name: 'openai',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
       } satisfies OpenAICompatibleProviderSettings)
     : openai
 }
@@ -96,7 +100,7 @@ export function createTextResponse(result: GenerateResult): Response {
 export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTemplateFunction {
   let currentPrompt: string | undefined
   const provider = getProvider()
-  const DEFAULT_MODEL = provider('gpt-4')
+  const DEFAULT_MODEL = provider('gpt-4o-mini')
 
   if (options.outputFormat && options.outputFormat !== 'json') {
     throw new Error('Invalid output format. Only JSON is supported')
@@ -104,24 +108,33 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
 
   const templateFn = async (prompt: string) => {
     currentPrompt = prompt
+    
+    if (options.outputFormat === 'json') {
+      const model = openai('gpt-4o-mini', { structuredOutputs: true })
+      if (options.schema) {
+        const schema = options.schema instanceof z.ZodType ? options.schema : z.object(options.schema as z.ZodRawShape)
+        const result = await generateObject({
+          model,
+          schema,
+          prompt,
+        })
+        return JSON.stringify(result.object)
+      } else {
+        const result = await generateObject({
+          model,
+          output: 'no-schema',
+          prompt,
+        })
+        return JSON.stringify(result.object)
+      }
+    }
+
     const result = await generateText({
-      model: options.model || DEFAULT_MODEL,
+      model: openai('gpt-4o-mini'),
       prompt,
       ...options,
-      ...(options.outputFormat && {
-        prompt: `${prompt}\n\nPlease format the response as JSON${options.schema ? ` following this schema:\n${JSON.stringify(options.schema, null, 2)}` : ''}`,
-        ...(options.outputFormat === 'json' &&
-          options.schema && {
-            experimental_output: Output.object({
-              schema: options.schema instanceof z.ZodType ? options.schema : z.object(options.schema as z.ZodRawShape),
-            }),
-          }),
-      }),
     })
 
-    if (options.outputFormat === 'json' && result.experimental_output) {
-      return JSON.stringify(result.experimental_output)
-    }
     return result.text
   }
 
