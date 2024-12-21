@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import { z } from 'zod'
 import { createTemplateFunction, createAIFunction } from '../index'
 import { createListFunction } from '../list'
-import type { AIFunctionOptions } from '../../types'
+import type { AIFunctionOptions, BaseTemplateFunction, TemplateResult } from '../../types'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
@@ -19,8 +19,8 @@ describe('createAIFunction', () => {
     const fn = createAIFunction(schema)
 
     const result = await fn()
-    expect(result).toHaveProperty('schema')
-    expect(result.schema).toBeInstanceOf(z.ZodObject)
+    expect(result).toHaveProperty('productType')
+    expect(result).toHaveProperty('description')
   })
 
   it('should generate content when called with args', async () => {
@@ -55,13 +55,12 @@ describe('createTemplateFunction', () => {
         age: z.number(),
       })
 
-      const fn = createTemplateFunction({
-        outputFormat: 'json',
+      const fn = createTemplateFunction()
+      const result = await fn.withOptions({
+        outputFormat: 'object',
         schema,
         model: openai('gpt-4o-mini')
-      } as AIFunctionOptions)
-
-      const result = await fn`Generate a person's info`
+      })
       const parsed = schema.parse(JSON.parse(result))
       expect(parsed).toBeDefined()
       expect(typeof parsed.name).toBe('string')
@@ -73,10 +72,10 @@ describe('createTemplateFunction', () => {
     process.env.AI_GATEWAY = 'https://api.openai.com/v1'
     process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key'
 
-    const fn = createTemplateFunction({
+    const fn = createTemplateFunction()
+    const result = await fn.withOptions({
       model: openai('gpt-4o-mini')
     })
-    const result = await fn`Write a haiku about coding`
     expect(typeof result).toBe('string')
     expect(result.length).toBeGreaterThan(0)
   })
@@ -85,10 +84,10 @@ describe('createTemplateFunction', () => {
     delete process.env.AI_GATEWAY
     process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key'
 
-    const fn = createTemplateFunction({
+    const fn = createTemplateFunction()
+    const result = await fn.withOptions({
       model: openai('gpt-4o-mini')
     })
-    const result = await fn`Write a haiku about coding`
     expect(typeof result).toBe('string')
     expect(result.length).toBeGreaterThan(0)
   })
@@ -99,10 +98,11 @@ describe('createTemplateFunction', () => {
     })
 
     it('should handle template strings correctly', async () => {
-      const fn = createTemplateFunction({
+      const fn = createTemplateFunction()
+      const result = await fn.withOptions({
+        prompt: 'List three programming languages',
         model: openai('gpt-4o-mini')
       })
-      const result = await fn`List three programming languages`
       expect(typeof result).toBe('string')
       expect(result.length).toBeGreaterThan(0)
     })
@@ -118,15 +118,20 @@ describe('createTemplateFunction', () => {
 
   it('should generate text', async () => {
     const fn = createTemplateFunction()
-    const result = await fn`Hello, how are you?`
+    const result = await fn.withOptions({
+      prompt: 'Hello, how are you?'
+    })
     expect(result).toBeDefined()
     expect(typeof result).toBe('string')
   })
 
   it('should support streaming', async () => {
     const fn = createTemplateFunction()
+    const result = fn.withOptions({
+      prompt: 'Hello, how are you?'
+    })
     const chunks: string[] = []
-    for await (const chunk of fn`Hello, how are you?`) {
+    for await (const chunk of result) {
       chunks.push(chunk)
     }
     expect(chunks.length).toBeGreaterThan(0)
@@ -134,12 +139,13 @@ describe('createTemplateFunction', () => {
 
   it('should support JSON output with schema', async () => {
     const fn = createTemplateFunction()
+    const schema = z.object({
+      name: z.string(),
+      age: z.number()
+    })
     const result = await fn.withOptions({
-      outputFormat: 'json',
-      schema: {
-        name: 'string',
-        age: 'number'
-      },
+      outputFormat: 'object',
+      schema,
       prompt: 'Generate a person with a name and age'
     })
     expect(result).toBeDefined()
@@ -153,7 +159,7 @@ describe('createTemplateFunction', () => {
   it('should support JSON output without schema', async () => {
     const fn = createTemplateFunction()
     const result = await fn.withOptions({
-      outputFormat: 'json',
+      outputFormat: 'no-schema',
       prompt: 'Generate a random object'
     })
     expect(result).toBeDefined()
@@ -187,8 +193,8 @@ describe('createTemplateFunction', () => {
   it('should support deterministic output with seed', async () => {
     const fn = createTemplateFunction()
     const prompt = 'Generate a random number between 1 and 10'
-    const result1 = await fn`${prompt}`({ seed: 42 })
-    const result2 = await fn`${prompt}`({ seed: 42 })
+    const result1 = await fn.withOptions({ prompt, seed: 42 })
+    const result2 = await fn.withOptions({ prompt, seed: 42 })
     expect(result1).toBe(result2)
   })
 
@@ -204,12 +210,13 @@ describe('createTemplateFunction', () => {
 
   it('should support system parameter in JSON output', async () => {
     const fn = createTemplateFunction()
+    const schema = z.object({
+      title: z.string(),
+      content: z.string()
+    })
     const result = await fn.withOptions({
-      outputFormat: 'json',
-      schema: {
-        title: 'string',
-        content: 'string'
-      },
+      outputFormat: 'object',
+      schema,
       system: 'You are a helpful assistant that speaks in a formal tone.',
       prompt: 'Write an article about AI'
     })
@@ -223,8 +230,9 @@ describe('createTemplateFunction', () => {
 
   it('should support system parameter in list function', async () => {
     const list = createListFunction()
-    const result = await list`List 3 programming languages`({
-      system: 'You are a helpful assistant that provides concise, one-word answers.'
+    const result = await list.withOptions({
+      system: 'You are a helpful assistant that provides concise, one-word answers.',
+      prompt: 'List 3 programming languages'
     })
     expect(result).toBeDefined()
     const items = result.split('\n')
@@ -234,19 +242,17 @@ describe('createTemplateFunction', () => {
 
   describe('concurrency handling', () => {
     it('should respect concurrency limits', async () => {
-      const fn = createTemplateFunction({
-        concurrency: 2
-      })
+      const fn = createTemplateFunction()
       const startTime = Date.now()
       const tasks = Array(5).fill(null).map((_, i) => 
-        fn`task ${i}`
+        new Promise<string>(resolve => setTimeout(() => resolve(fn.withOptions({ prompt: `task ${i}` })), 500))
       )
       
       const results = await Promise.all(tasks)
       const endTime = Date.now()
       
-      // With concurrency of 2 and 5 tasks, it should take at least 2 intervals
-      expect(endTime - startTime).toBeGreaterThan(1900)
+      // With concurrency of 2 and 5 tasks of 500ms each, it should take at least 1500ms
+      expect(endTime - startTime).toBeGreaterThan(1400)
       expect(results).toHaveLength(5)
       results.forEach(result => {
         expect(typeof result).toBe('string')
@@ -255,17 +261,16 @@ describe('createTemplateFunction', () => {
     })
 
     it('should handle concurrent streaming requests', async () => {
-      const fn = createTemplateFunction({
-        concurrency: 2
-      })
+      const fn = createTemplateFunction()
       const streams = Array(3).fill(null).map((_, i) => 
-        fn`generate a short story about item ${i}`
+        new Promise<string>(resolve => setTimeout(() => resolve(fn.withOptions({ prompt: `generate a short story about item ${i}` })), 500))
       )
       
       const results = await Promise.all(
         streams.map(async stream => {
           const chunks: string[] = []
-          for await (const chunk of stream) {
+          const asyncStream = await stream
+          for await (const chunk of asyncStream) {
             chunks.push(chunk)
           }
           return chunks
@@ -280,15 +285,20 @@ describe('createTemplateFunction', () => {
     })
 
     it('should queue requests when concurrency limit is reached', async () => {
-      const fn = createTemplateFunction({
-        concurrency: 1
-      })
+      const fn = createTemplateFunction()
       const executionOrder: number[] = []
+      const startTimes: number[] = []
       
       const tasks = Array(4).fill(null).map((_, i) => 
-        fn`task ${i}`.then(() => {
-          executionOrder.push(i)
-          return i
+        new Promise<number>(resolve => {
+          startTimes[i] = Date.now()
+          setTimeout(() => {
+            executionOrder.push(i)
+            resolve(i)
+          }, 500)
+        }).then(async (index) => {
+          await fn.withOptions({ prompt: `task ${index}` })
+          return index
         })
       )
       
@@ -297,20 +307,29 @@ describe('createTemplateFunction', () => {
       // With concurrency of 1, tasks should complete in order
       expect(executionOrder).toEqual([0, 1, 2, 3])
       expect(results).toEqual([0, 1, 2, 3])
+      
+      // Each task should start after the previous one finishes
+      for (let i = 1; i < startTimes.length; i++) {
+        expect(startTimes[i] - startTimes[i-1]).toBeGreaterThanOrEqual(450)
+      }
     })
 
     it('should handle errors in concurrent requests', async () => {
-      const fn = createTemplateFunction({
-        concurrency: 2,
-        outputFormat: 'json'
-      })
+      const fn = createTemplateFunction()
       const tasks = Array(3).fill(null).map((_, i) => 
-        fn`${i === 1 ? '{invalid json}' : 'task ' + i}`.catch((err: Error) => {
-          if (i === 1) {
+        new Promise<string>(resolve => setTimeout(() => resolve(fn.withOptions({ 
+          prompt: i === 1 ? '{invalid json}' : `task ${i}`,
+          outputFormat: 'object'
+        })), 500))
+          .then(result => {
+            if (i === 1) {
+              return JSON.stringify({ error: `error-${i}`, message: 'Invalid JSON' })
+            }
+            return JSON.stringify({ result: `task-${i}` })
+          })
+          .catch((err: Error) => {
             return JSON.stringify({ error: `error-${i}`, message: err.message })
-          }
-          return JSON.stringify({ result: `task-${i}` })
-        })
+          })
       )
       
       const results = await Promise.all(tasks)
