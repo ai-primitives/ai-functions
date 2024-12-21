@@ -2,17 +2,26 @@ import { describe, expect, it } from 'vitest'
 import { ai } from './index'
 import { z } from 'zod'
 import type { AIFunctionOptions } from './types'
-import { createLanguageModel } from '@ai-sdk/provider'
+import type { LanguageModelV1 } from '@ai-sdk/provider'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
 describe('ai template tag', () => {
-  const model = createLanguageModel({
-    specificationVersion: '1.0',
+  const openaiModel = createOpenAICompatible({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.AI_GATEWAY,
+    defaultModel: 'gpt-3.5-turbo',
+  })
+
+  const model: LanguageModelV1 = {
+    specificationVersion: 'v1',
     provider: 'openai',
     modelId: 'gpt-3.5-turbo',
     defaultObjectGenerationMode: 'json',
-    defaultGenerationMode: 'text',
-    defaultMaxTokens: 2048,
-  })
+    supportsImageUrls: true,
+    supportsStructuredOutputs: true,
+    doGenerate: openaiModel.doGenerate.bind(openaiModel),
+    doStream: openaiModel.doStream.bind(openaiModel),
+  }
 
   it('should support basic template literals', async () => {
     const name = 'World'
