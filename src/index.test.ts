@@ -43,14 +43,25 @@ describe('ai template tag', () => {
   })
 
   it('should support streaming responses', async () => {
-    const stream = ai`List some items`({ model }) as AsyncIterablePromise<string>
-    const collected: string[] = []
-
-    for await (const chunk of stream) {
-      collected.push(chunk.trim())
+    const streamingModel = openai('gpt-4o', { 
+      structuredOutputs: true
+    })
+    const response = ai`List some items`({ 
+      model: streamingModel,
+      outputFormat: 'json',
+      schema: z.array(z.string()),
+      streaming: {
+        onProgress: () => {},
+        enableTokenCounting: true
+      }
+    }) as AsyncIterablePromise<string>
+    
+    expect(response[Symbol.asyncIterator]).toBeDefined()
+    const chunks: string[] = []
+    for await (const chunk of response) {
+      chunks.push(chunk)
     }
-
-    expect(collected.length).toBeGreaterThan(0)
-    expect(collected.every(chunk => typeof chunk === 'string')).toBe(true)
+    expect(chunks.length).toBeGreaterThan(0)
+    expect(JSON.parse(chunks.join(''))).toBeInstanceOf(Array)
   })
 })

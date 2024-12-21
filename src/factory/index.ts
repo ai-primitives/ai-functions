@@ -8,6 +8,7 @@ import PQueue from 'p-queue'
 import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue } from '../types'
 import { createRequestHandler, type RequestHandlingOptions } from '../utils/request-handler';
 import { StreamProgressTracker } from '../utils/stream-progress';
+import { AIRequestError } from '../errors'
 
 // Add this at the top of the file, before any other code
 function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
@@ -293,10 +294,9 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
       [Symbol.asyncIterator]: () => asyncIterator(prompt, options)
     }
     const callablePromise = Object.assign(
-      (opts?: AIFunctionOptions) => {
+      (opts?: AIFunctionOptions): Promise<T> => {
         if (!opts) return promise
-        const newPromise = templateFn(prompt, { ...options, ...opts })
-        return Object.assign(newPromise, { [Symbol.asyncIterator]: () => asyncIterator(prompt, { ...options, ...opts }) })
+        return templateFn(prompt, { ...options, ...opts }) as Promise<T>
       },
       promise
     )
@@ -332,7 +332,7 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
     {
       withOptions: (opts: AIFunctionOptions = {}) => {
         const prompt = opts.prompt || currentPrompt || ''
-        return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...opts }), prompt, { ...defaultOptions, ...opts })
+        return templateFn(prompt, { ...defaultOptions, ...opts })
       },
       [Symbol.asyncIterator]: (): AsyncIterator<string> => asyncIterator(currentPrompt || '', defaultOptions),
       get queue() {

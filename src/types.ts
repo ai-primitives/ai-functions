@@ -41,6 +41,8 @@ export interface StreamingOptions {
   estimateTimeRemaining?: boolean;
 }
 
+export type LanguageModelV1 = string // TODO: get this from the @ai-sdk/openai provider first parameter
+
 export interface AIFunctionOptions {
   model?: LanguageModelV1
   prompt?: string
