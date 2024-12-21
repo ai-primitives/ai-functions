@@ -1,5 +1,5 @@
-import { type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool, type ToolResultContent } from 'ai'
-import { Response } from '@ai-sdk/provider-utils'
+import { type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool, type CoreAssistantMessage, type CoreToolMessage } from 'ai'
+import { Response } from 'undici'
 
 export type MockGenerateTextResult = GenerateTextResult<
   Record<string, CoreTool<any, any>>,
@@ -21,7 +21,7 @@ export const createMockTextResponse = (text: string): MockGenerateTextResult => 
     id: '1',
     timestamp: new Date(),
     modelId: 'test-model',
-    messages: [{ role: 'assistant' as const, content: text }] as const,
+    messages: [{ role: 'assistant' as const, content: text }],
   },
   finishReason: 'stop',
   warnings: [],
@@ -42,6 +42,7 @@ export const createMockObjectResponse = <T extends JSONValue>(object: T): MockGe
     id: '1',
     timestamp: new Date(),
     modelId: 'test-model',
+    messages: [{ role: 'assistant' as const, content: JSON.stringify(object) }],
   },
   finishReason: 'stop',
   warnings: [],
@@ -64,7 +65,7 @@ export const createMockStreamResponse = (chunks: string[]): MockGenerateTextResu
 } => ({
   ...createMockTextResponse(chunks.join('')),
   experimental_stream: {
-    async *[Symbol.asyncIterator]() {
+    [Symbol.asyncIterator]: async function* () {
       for (const chunk of chunks) {
         yield chunk
       }
