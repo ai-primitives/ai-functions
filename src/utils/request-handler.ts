@@ -11,6 +11,7 @@ export interface RequestHandlingOptions {
     retryDelay?: number
     timeout?: number
   }
+  streamingTimeout?: number
 }
 
 export class RequestHandler {
@@ -21,6 +22,7 @@ export class RequestHandler {
     backoffFactor: number
   }
   private queue: PQueue
+  private streamingTimeout: number
 
   constructor(options: RequestHandlingOptions = {}) {
     this.retryOptions = {
@@ -30,27 +32,52 @@ export class RequestHandler {
       backoffFactor: 2
     }
     this.queue = new PQueue({ concurrency: 1 })
+    this.streamingTimeout = options.streamingTimeout ?? 30000
   }
 
-  async executeWithRetry<T>(operation: () => Promise<T>, retryable = true): Promise<T> {
+  async executeWithRetry<T>(operation: () => Promise<T> | AsyncGenerator<T>, retryable = true, isStreaming = false): Promise<T> {
     let lastError: Error | undefined
     let attempt = 0
     const maxAttempts = retryable ? this.retryOptions.maxRetries : 0
+    const timeoutMs = isStreaming ? this.streamingTimeout : this.retryOptions.maxDelay
 
     while (attempt <= maxAttempts) {
       try {
-        const timeoutPromise = new Promise<T>((_, reject) => {
-          setTimeout(() => {
-            reject(new AIRequestError(`Request timed out after ${this.retryOptions.maxDelay}ms`))
-          }, this.retryOptions.maxDelay)
-        })
+        const abortController = new AbortController()
+        const timeoutId = setTimeout(() => {
+          abortController.abort()
+        }, timeoutMs)
 
-        const result = await Promise.race([operation(), timeoutPromise])
-        return result
+        try {
+          const operationResult = operation()
+          if (operationResult instanceof Promise) {
+            const result = await Promise.race([
+              operationResult,
+              new Promise<never>((_, reject) => {
+                abortController.signal.addEventListener('abort', () => {
+                  reject(new AIRequestError(`Request timed out after ${timeoutMs}ms`))
+                })
+              })
+            ])
+            clearTimeout(timeoutId)
+            return result
+          } else {
+            const chunks: T[] = []
+            for await (const chunk of operationResult) {
+              if (abortController.signal.aborted) {
+                throw new AIRequestError(`Stream timed out after ${timeoutMs}ms`)
+              }
+              chunks.push(chunk)
+            }
+            clearTimeout(timeoutId)
+            return chunks[chunks.length - 1]
+          }
+        } finally {
+          clearTimeout(timeoutId)
+        }
       } catch (error) {
         lastError = error as Error
         
-        // If error is explicitly marked as non-retryable or we've hit max retries
         if (!retryable || error instanceof AIRequestError && !error.retryable) {
           throw error
         }
@@ -75,8 +102,8 @@ export class RequestHandler {
     throw lastError
   }
 
-  async execute<T>(operation: () => Promise<T>, retryable = true): Promise<T> {
-    return this.queue.add(() => this.executeWithRetry(operation, retryable))
+  async execute<T>(operation: () => Promise<T> | AsyncGenerator<T>, retryable = true, isStreaming = false): Promise<T> {
+    return this.queue.add(() => this.executeWithRetry(operation, retryable, isStreaming))
   }
 
   get concurrency(): number | undefined {

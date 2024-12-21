@@ -1,4 +1,4 @@
-import { generateText, streamObject } from 'ai'
+import { generateText, streamObject, type StreamObjectResult, type AsyncIterableStream } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { z } from 'zod'
 import PQueue from 'p-queue'
@@ -112,13 +112,7 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
           schema: z.string(),
           prompt: `Generate a list of items based on this prompt: ${prompt}`,
           system: options.system,
-          temperature: options.temperature,
-          maxTokens: options.maxTokens,
-          topP: options.topP,
-          frequencyPenalty: options.frequencyPenalty,
-          presencePenalty: options.presencePenalty,
-          stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
-          seed: options.seed
+          ...modelParams
         }
 
         const { elementStream } = streamObject(streamOptions)
@@ -128,23 +122,20 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
         }
       } catch (error) {
         if (error instanceof Error) {
-          throw error
+          // Check for specific error types and handle accordingly
+          if (error.name === 'AbortError') {
+            throw new Error('Stream was aborted')
+          } else if (error.name === 'TimeoutError') {
+            throw new Error('Stream timed out')
+          } else {
+            throw error
+          }
         }
-        throw new Error('Failed to generate list')
+        throw new Error('Failed to generate list: Unknown error occurred')
       }
     }
 
-    const queue = getQueue(options)
-    if (queue) {
-      const generator = await queue.add(() => performRequest())
-      for await (const item of generator) {
-        yield item
-      }
-    } else {
-      for await (const item of performRequest()) {
-        yield item
-      }
-    }
+    yield* performRequest()
   }
 
   const templateFn = async (prompt: string, options: AIFunctionOptions = defaultOptions) => {

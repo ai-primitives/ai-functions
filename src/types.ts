@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { LanguageModelV1 } from 'ai'
 import type PQueue from 'p-queue'
+import type { LanguageModelV1 } from 'ai'
 
 export type Queue = Omit<PQueue, 'add'> & {
   add<T>(fn: () => Promise<T> | T): Promise<T>
@@ -23,6 +23,9 @@ export interface RequestHandlingOptions {
   retry?: RetryOptions;
   rateLimit?: RateLimitOptions;
   timeout?: number;
+  maxRetries?: number;
+  retryDelay?: number;
+  streamingTimeout?: number;
 }
 
 export interface StreamProgress {
@@ -40,8 +43,6 @@ export interface StreamingOptions {
   enableTokenCounting?: boolean;
   estimateTimeRemaining?: boolean;
 }
-
-export type LanguageModelV1 = string // TODO: get this from the @ai-sdk/openai provider first parameter
 
 export interface AIFunctionOptions {
   model?: LanguageModelV1

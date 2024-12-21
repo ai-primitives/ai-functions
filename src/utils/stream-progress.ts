@@ -7,6 +7,7 @@ export class StreamProgressTracker {
   private tokenRate: number = 0;
   private readonly options: StreamingOptions;
   private readonly callback: ProgressCallback;
+  private readonly alpha: number = 0.3; // EMA smoothing factor
 
   constructor(options: StreamingOptions) {
     this.options = options;
@@ -16,9 +17,18 @@ export class StreamProgressTracker {
   private updateTokenRate(newTokens: number) {
     const now = Date.now();
     const timeDiff = now - this.lastUpdateTime;
+    
     if (timeDiff > 0) {
-      // Calculate tokens per millisecond
-      this.tokenRate = (this.tokenRate + (newTokens / timeDiff)) / 2;
+      // Calculate instantaneous rate
+      const instantRate = newTokens / timeDiff;
+      
+      // Apply exponential moving average for smoother rate
+      if (this.tokenRate === 0) {
+        this.tokenRate = instantRate;
+      } else {
+        this.tokenRate = (this.alpha * instantRate) + ((1 - this.alpha) * this.tokenRate);
+      }
+      
       this.lastUpdateTime = now;
     }
   }
@@ -28,10 +38,18 @@ export class StreamProgressTracker {
       return undefined;
     }
 
-    // Estimate based on typical completion length and current rate
-    const estimatedTotalTokens = Math.max(500, this.tokensGenerated * 1.5);
+    // Use dynamic estimation based on current progress
+    const progressRatio = this.tokensGenerated / Math.max(100, this.tokensGenerated * 2);
+    const estimatedTotalTokens = Math.max(
+      this.tokensGenerated * (1 + (1 - progressRatio)),
+      this.tokensGenerated + 100
+    );
+    
     const remainingTokens = estimatedTotalTokens - this.tokensGenerated;
-    return (remainingTokens / this.tokenRate);
+    const estimatedMs = remainingTokens / this.tokenRate;
+    
+    // Return undefined if estimate is unreasonable
+    return estimatedMs > 0 && estimatedMs < 3600000 ? estimatedMs : undefined;
   }
 
   public onChunk(chunk: string) {
