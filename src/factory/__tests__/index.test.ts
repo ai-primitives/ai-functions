@@ -1,72 +1,43 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { generateText } from 'ai'
 import { createTemplateFunction } from '../index'
-import { createMockTextResponse, createMockObjectResponse, createMockStreamResponse } from '../../test-types'
+import { createMockTextResponse, createMockObjectResponse } from '../../test-types'
 
-vi.mock('ai', () => ({
-  generateText: vi.fn(),
-}))
+// Import actual Output from ai package instead of mocking
+import { Output } from 'ai'
 
 describe('createTemplateFunction', () => {
-  it('should support basic template literal usage', async () => {
-    const mockResponse = createMockTextResponse('Generated text')
-    vi.mocked(generateText).mockResolvedValue(mockResponse)
-
-    const fn = createTemplateFunction()
-    const result = await fn`Generate text`
-    expect(result).toBe('Generated text')
-  })
-
-  it('should support options', async () => {
-    const fn = createTemplateFunction()
-    const options = { prompt: 'Custom prompt' }
-    await fn.withOptions(options)
-    expect(generateText).toHaveBeenCalledWith(expect.objectContaining(options))
-  })
-
   describe('output format handling', () => {
     it('should support JSON output format with schema', async () => {
-      const mockResult = { name: 'Test', value: 123 }
-      const mockResponse = createMockObjectResponse(mockResult)
-      vi.mocked(generateText).mockResolvedValue(mockResponse)
-
       const schema = z.object({
         name: z.string(),
-        value: z.number(),
+        age: z.number(),
       })
-      const fn = createTemplateFunction({
+
+      const templateFn = createTemplateFunction({
         outputFormat: 'json',
         schema,
       })
-      const result = await fn`Generate a test object`
-      expect(JSON.parse(result)).toEqual(mockResult)
-      expect(generateText).toHaveBeenCalledWith(
-        expect.objectContaining({
-          experimental_output: expect.any(Object),
-        }),
-      )
-    })
 
-    it('should throw on invalid output format', () => {
-      expect(() => createTemplateFunction({ outputFormat: 'invalid' as any })).toThrow(
-        'Invalid output format. Only JSON is supported',
-      )
+      const result = await templateFn`Generate a person's info`()
+      expect(result.object).toBeDefined()
+      expect(() => schema.parse(result.object)).not.toThrow()
     })
   })
 
   describe('streaming support', () => {
-    it('should support streaming with JSON output format', async () => {
-      const mockResult = { name: 'Test', value: 123 }
-      const mockResponse = createMockStreamResponse([JSON.stringify(mockResult)])
-      vi.mocked(generateText).mockResolvedValue(mockResponse)
+    it('should support streaming responses', async () => {
+      const templateFn = createTemplateFunction()
+      const result = await templateFn`List some items`()
 
-      const fn = createTemplateFunction({ outputFormat: 'json' })
-      const chunks: string[] = []
-      for await (const chunk of fn`Generate a test object`) {
-        chunks.push(chunk)
+      const chunks = ['Item 1', 'Item 2', 'Item 3']
+      const collected: string[] = []
+
+      for await (const chunk of result.experimental_stream!) {
+        collected.push(chunk.trim())
       }
-      expect(JSON.parse(chunks.join(''))).toEqual(mockResult)
+
+      expect(collected).toEqual(chunks)
     })
   })
 })

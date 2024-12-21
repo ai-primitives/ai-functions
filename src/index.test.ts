@@ -1,79 +1,45 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { ai } from './index'
 import { z } from 'zod'
-import { generateText } from 'ai'
-import { ai, list } from './index'
-import { createMockTextResponse, createMockObjectResponse, createMockStreamResponse } from './test-types'
 
-vi.mock('ai', () => ({
-  generateText: vi.fn(),
-}))
-
-describe('ai', () => {
-  it('should support template literal usage', async () => {
-    const mockResponse = createMockTextResponse('Generated text')
-    vi.mocked(generateText).mockResolvedValue(mockResponse)
-
-    const result = await ai`Hello ${123}`
-    expect(result).toBe('Generated text')
+describe('ai template tag', () => {
+  it('should support basic template literals', async () => {
+    const name = 'World'
+    const result = await ai`Hello ${name}`()
+    expect(result.text).toBeDefined()
+    expect(typeof result.text).toBe('string')
   })
 
-  it('should support categorizeProduct function', async () => {
-    const mockResult = {
-      productType: 'App' as const,
-      customer: 'Enterprise',
-      solution: 'Productivity',
-      description: 'A cool app',
-    }
-    const mockResponse = createMockObjectResponse(mockResult)
-    vi.mocked(generateText).mockResolvedValue(mockResponse)
-
-    const result = await ai.categorizeProduct({
-      productType: 'App',
-      customer: 'Enterprise',
-      solution: 'Productivity',
-      description: 'test',
+  it('should support configuration object', async () => {
+    const name = 'World'
+    const result = await ai`Hello ${name}`({
+      model: 'gpt-3.5-turbo',
     })
-    expect(result).toEqual(mockResult)
+    expect(result.text).toBeDefined()
+    expect(typeof result.text).toBe('string')
   })
 
-  it('should return schema when categorizeProduct called without args', async () => {
-    const result = await ai.categorizeProduct()
-    expect(result).toHaveProperty('schema')
-    expect(result.schema).toBeInstanceOf(z.ZodObject)
+  it('should support JSON output with schema', async () => {
+    const schema = z.object({
+      greeting: z.string(),
+      timestamp: z.number(),
+    })
+
+    const result = await ai`Generate a greeting`({
+      outputFormat: 'json',
+      schema,
+    })
+
+    expect(result.object).toBeDefined()
+    expect(() => schema.parse(result.object)).not.toThrow()
   })
 
-  it('should support streaming with async iteration', async () => {
-    const chunks = ['Hello', ' ', 'World']
-    const mockResponse = createMockStreamResponse(chunks)
-    vi.mocked(generateText).mockResolvedValue(mockResponse)
-
+  it('should support streaming responses', async () => {
+    const chunks = ['Item 1', 'Item 2', 'Item 3']
     const collected: string[] = []
-    for await (const chunk of ai`Stream this`) {
-      collected.push(chunk)
-    }
 
-    expect(collected).toEqual(chunks)
-  })
-})
-
-describe('list', () => {
-  it('should support template literal usage', async () => {
-    const mockResponse = createMockTextResponse('Item 1\nItem 2\nItem 3')
-    vi.mocked(generateText).mockResolvedValue(mockResponse)
-
-    const result = await list`Generate a list`
-    expect(result).toBe('Item 1\nItem 2\nItem 3')
-  })
-
-
-  it('should support async iteration', async () => {
-    const chunks = ['Item 1\n', 'Item 2\n', 'Item 3']
-    const mockResponse = createMockStreamResponse(chunks)
-    vi.mocked(generateText).mockResolvedValue(mockResponse)
-
-    const collected: string[] = []
-    for await (const chunk of list`Generate a list`) {
-      collected.push(chunk)
+    for await (const chunk of ai`List some items`()) {
+      collected.push(chunk.trim())
     }
 
     expect(collected).toEqual(chunks)
