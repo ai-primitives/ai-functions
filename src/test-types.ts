@@ -1,4 +1,4 @@
-import { type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool, type CoreAssistantMessage, type CoreToolMessage } from 'ai'
+import { type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
 import { Response } from 'undici'
 
 export type MockGenerateTextResult = GenerateTextResult<
@@ -34,7 +34,7 @@ export const createMockTextResponse = (text: string): MockGenerateTextResult => 
   experimental_providerMetadata: {},
 })
 
-export const createMockObjectResponse = <T extends Record<string, unknown>>(object: T): MockGenerateObjectResult => ({
+export const createMockObjectResponse = (object: JSONValue): MockGenerateObjectResult => ({
   text: JSON.stringify(object),
   object,
   usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
