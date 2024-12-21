@@ -1,10 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createTemplateFunction } from '../index'
-import { createMockTextResponse, createMockObjectResponse } from '../../test-types'
-
-// Import actual Output from ai package instead of mocking
-import { Output } from 'ai'
+import type { AsyncIterablePromise } from '../../types'
 
 describe('createTemplateFunction', () => {
   describe('output format handling', () => {
@@ -19,7 +16,8 @@ describe('createTemplateFunction', () => {
         schema,
       })
 
-      const result = await fn(['Generate a person\'s info'])
+      // Use template literal syntax properly
+      const result = await fn`Generate a person's info`
       expect(result.object).toBeDefined()
       expect(() => schema.parse(result.object)).not.toThrow()
     })
@@ -28,12 +26,13 @@ describe('createTemplateFunction', () => {
   describe('streaming support', () => {
     it('should support streaming responses', async () => {
       const fn = createTemplateFunction()
-      const result = await fn(['List some items'])
+      const result = await fn`List some items`
 
       const chunks = ['Item 1', 'Item 2', 'Item 3']
       const collected: string[] = []
 
-      for await (const chunk of result.experimental_stream!) {
+      // Handle AsyncIterablePromise correctly
+      for await (const chunk of result) {
         collected.push(chunk.trim())
       }
 
