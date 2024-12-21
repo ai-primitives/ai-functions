@@ -1,61 +1,47 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ai, list } from './index'
-import { generateText, streamText, generateObject } from 'ai'
+import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
-import type { GenerateTextResult, GenerateObjectResult, StreamTextResult } from 'ai'
+import { generateText, type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
+import { Response, Headers } from 'undici'
+import { ai, list } from './index'
 
-// Define types for our mocks
-type Tools = Record<string, never>
-
-interface MockStream {
-  [Symbol.asyncIterator](): AsyncGenerator<string, void, unknown>
-}
-
-interface MockStreamTextResult {
-  textStream: MockStream
-  usage: Promise<{
-    promptTokens: number
-    completionTokens: number
-    totalTokens: number
-  }>
-  warnings: string[]
-  finishReason: 'stop' | 'length' | 'content-filter' | 'tool-calls' | 'error' | 'other'
-  experimental_providerMetadata: Record<string, unknown>
-  text: string
-  tools: Record<string, never>
-  toolChoice: 'auto' | 'none' | 'required'
-  temperature: number
-  topP?: number
-  presencePenalty?: number
-  frequencyPenalty?: number
-  stop?: string[]
-  maxTokens?: number
-  seed?: number
-  _internal?: Record<string, unknown>
-  toolCalls: never[]
-  toolResults: never[]
-  steps: never[]
-  request: { prompt: string }
-  model: { id: string; provider: string }
-}
-
-// Mock the ai package
+// Mock the AI SDK functions
 vi.mock('ai', () => ({
   generateText: vi.fn(),
-  streamText: vi.fn(),
-  generateObject: vi.fn(),
+  Output: {
+    object: vi.fn().mockImplementation((config) => config),
+    text: vi.fn().mockImplementation((config) => config),
+  },
 }))
 
-describe('ai', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
+// Mock usage data
+const mockUsage = {
+  promptTokens: 10,
+  completionTokens: 20,
+  totalTokens: 30,
+}
 
+describe('ai', () => {
   it('should support template literal usage', async () => {
-    vi.mocked(generateText).mockResolvedValue({
+    const mockResponse: GenerateTextResult<Record<string, CoreTool<string, unknown>>, Record<string, unknown>> = {
       text: 'Generated text',
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-    } as GenerateTextResult<Tools, string>)
+      usage: mockUsage,
+      response: {
+        id: '1',
+        timestamp: new Date(),
+        modelId: 'test-model',
+        messages: [{ role: 'assistant' as const, content: 'Generated text' }] as const,
+      },
+      finishReason: 'stop',
+      warnings: [],
+      request: {},
+      logprobs: undefined,
+      toolCalls: [],
+      toolResults: [],
+      steps: [],
+      experimental_output: {} as Record<string, unknown>,
+      experimental_providerMetadata: {},
+    }
+    vi.mocked(generateText).mockResolvedValue(mockResponse)
 
     const result = await ai`Hello ${123}`
     expect(result).toBe('Generated text')
@@ -64,34 +50,44 @@ describe('ai', () => {
   it('should support categorizeProduct function', async () => {
     const mockResult = {
       productType: 'App',
-      customer: 'Small Business Owners',
-      solution: 'Automated accounting software',
-      description: 'AI-powered accounting automation for small businesses',
+      description: 'A cool app',
     }
 
-    vi.mocked(generateObject).mockResolvedValue({
+    const mockResponse: GenerateObjectResult<JSONValue> = {
       object: mockResult,
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-    } as GenerateObjectResult<typeof mockResult>)
+      usage: mockUsage,
+      response: {
+        id: '1',
+        timestamp: new Date(),
+        modelId: 'test-model',
+      },
+      finishReason: 'stop',
+      warnings: [],
+      request: {},
+      logprobs: undefined,
+      experimental_output: mockResult,
+      experimental_providerMetadata: {},
+      toJsonResponse: () =>
+        new Response(JSON.stringify(mockResult), {
+          status: 200,
+          headers: new Headers({ 'Content-Type': 'application/json' }),
+        }),
+    }
+    vi.mocked(generateText).mockResolvedValue(mockResponse)
 
-    const result = await ai.categorizeProduct({
-      productType: 'App',
-      customer: 'Small Business Owners',
-      solution: 'Automated accounting software',
-      description: 'AI-powered accounting automation for small businesses',
-    })
+    const result = await ai.categorizeProduct({ productType: 'App', description: 'test' })
     expect(result).toEqual(mockResult)
   })
 
   it('should return schema when categorizeProduct called without args', async () => {
     const result = await ai.categorizeProduct()
     expect(result).toHaveProperty('schema')
-    expect(result.schema).toBeInstanceOf(z.ZodSchema)
+    expect(result.schema).toBeInstanceOf(z.ZodObject)
   })
 
   it('should support streaming with async iteration', async () => {
     const chunks = ['Hello', ' ', 'World']
-    const mockStream: MockStream = {
+    const mockStream = {
       async *[Symbol.asyncIterator]() {
         for (const chunk of chunks) {
           yield chunk
@@ -99,28 +95,31 @@ describe('ai', () => {
       },
     }
 
-    const mockResult: MockStreamTextResult = {
-      textStream: mockStream,
-      usage: Promise.resolve({ promptTokens: 10, completionTokens: 20, totalTokens: 30 }),
-      warnings: [],
-      finishReason: 'stop',
-      experimental_providerMetadata: {},
+    const mockResponse: GenerateTextResult<Record<string, CoreTool<string, unknown>>, { experimental_stream: AsyncIterable<string> }> = {
       text: chunks.join(''),
-      tools: {},
-      toolChoice: 'auto',
-      temperature: 0.7,
-      maxTokens: 100,
+      usage: mockUsage,
+      response: {
+        id: '1',
+        timestamp: new Date(),
+        modelId: 'test-model',
+        messages: [{ role: 'assistant' as const, content: chunks.join('') }] as const,
+      },
+      finishReason: 'stop',
+      warnings: [],
+      request: {},
+      logprobs: undefined,
       toolCalls: [],
       toolResults: [],
       steps: [],
-      request: { prompt: 'Hello World' },
-      model: { id: 'gpt-4o', provider: '@ai-sdk/openai' },
+      experimental_output: { experimental_stream: mockStream },
+      experimental_stream: mockStream,
+      experimental_providerMetadata: {},
     }
 
-    vi.mocked(streamText).mockReturnValue(mockResult as unknown as StreamTextResult<Tools>)
+    vi.mocked(generateText).mockResolvedValue(mockResponse)
 
     const collected: string[] = []
-    for await (const chunk of ai`Hello World`) {
+    for await (const chunk of ai`Stream this`) {
       collected.push(chunk)
     }
 
@@ -129,23 +128,36 @@ describe('ai', () => {
 })
 
 describe('list', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
   it('should support template literal usage', async () => {
-    vi.mocked(generateText).mockResolvedValue({
+    const mockResponse: GenerateTextResult<Record<string, CoreTool<string, unknown>>, Record<string, unknown>> = {
       text: 'Item 1\nItem 2\nItem 3',
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-    } as GenerateTextResult<Tools, string>)
+      usage: mockUsage,
+      response: {
+        id: '1',
+        timestamp: new Date(),
+        modelId: 'test-model',
+        messages: [{ role: 'assistant' as const, content: 'Item 1\nItem 2\nItem 3' }] as const,
+      },
+      finishReason: 'stop',
+      warnings: [],
+      request: {},
+      logprobs: undefined,
+      toolCalls: [],
+      toolResults: [],
+      steps: [],
+      experimental_output: {} as Record<string, unknown>,
+      experimental_providerMetadata: {},
+    }
+    vi.mocked(generateText).mockResolvedValue(mockResponse)
 
-    const result = await list`fun things to do in Miami`
+    const result = await list`Generate a list`
     expect(result).toBe('Item 1\nItem 2\nItem 3')
   })
 
   it('should support async iteration', async () => {
-    const chunks = ['Item 1', '\n', 'Item 2', '\n', 'Item 3']
-    const mockStream: MockStream = {
+    const text = 'Item 1\nItem 2\nItem 3'
+    const chunks = text.split('\n')
+    const mockStream = {
       async *[Symbol.asyncIterator]() {
         for (const chunk of chunks) {
           yield chunk
@@ -153,28 +165,31 @@ describe('list', () => {
       },
     }
 
-    const mockResult: MockStreamTextResult = {
-      textStream: mockStream,
-      usage: Promise.resolve({ promptTokens: 10, completionTokens: 20, totalTokens: 30 }),
-      warnings: [],
+    const mockResponse: GenerateTextResult<Record<string, CoreTool<string, unknown>>, { experimental_stream: AsyncIterable<string> }> = {
+      text,
+      usage: mockUsage,
+      response: {
+        id: '1',
+        timestamp: new Date(),
+        modelId: 'test-model',
+        messages: [{ role: 'assistant' as const, content: text }] as const,
+      },
       finishReason: 'stop',
-      experimental_providerMetadata: {},
-      text: chunks.join(''),
-      tools: {},
-      toolChoice: 'auto',
-      temperature: 0.7,
-      maxTokens: 100,
+      warnings: [],
+      request: {},
+      logprobs: undefined,
       toolCalls: [],
       toolResults: [],
       steps: [],
-      request: { prompt: 'fun things to do in Miami' },
-      model: { id: 'gpt-4o', provider: '@ai-sdk/openai' },
+      experimental_output: { experimental_stream: mockStream },
+      experimental_stream: mockStream,
+      experimental_providerMetadata: {},
     }
 
-    vi.mocked(streamText).mockReturnValue(mockResult as unknown as StreamTextResult<Tools>)
+    vi.mocked(generateText).mockResolvedValue(mockResponse)
 
     const collected: string[] = []
-    for await (const chunk of list`fun things to do in Miami`) {
+    for await (const chunk of list`Generate a list`) {
       collected.push(chunk)
     }
 

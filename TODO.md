@@ -8,6 +8,7 @@
   - [x] ESLint and Prettier configuration
 
 ## AI Function Implementation
+
 - [x] Basic template literal support (`ai\`prompt ${var}\``)
 - [x] Configuration object support (`ai\`prompt ${var}\`({ model: 'model-name' })`)
 - [x] Async iterator support (`for await (const chunk of ai\`prompt ${var}\`) { ... }`)
@@ -26,8 +27,8 @@
   - [x] Unstructured output
   - [x] Custom output formats (High Priority)
     - [x] JSON schema support
-    - [x] XML output support
-    - [x] CSV output support
+    - [-] XML output support (removed)
+    - [-] CSV output support (removed)
 - [x] Streaming Support (High Priority)
   - [x] Object streaming
   - [x] Text streaming
@@ -38,9 +39,11 @@
     - [x] Progress event emitters
 
 ## Example Support
+
 Note: Blog post and product categorization are example use cases demonstrating library capabilities, not core implementations.
 
 ### Blog Post Example Requirements
+
 - [ ] Long-form content generation support (High Priority)
   - [ ] Streaming response handling
   - [ ] Markdown format processing
@@ -49,6 +52,7 @@ Note: Blog post and product categorization are example use cases demonstrating l
   - [ ] Error handling for timeouts
 
 ### Product Categorization Example Requirements
+
 - [ ] Structured output generation (Medium Priority)
   - [ ] Zod schema validation
   - [ ] Type-safe response handling
@@ -135,4 +139,4 @@ Note: Blog post and product categorization are example use cases demonstrating l
 - [ ] Implement prompt templating system
 - [ ] Add streaming progress indicators
 - [ ] Support for fine-tuned models
-Added @ai-sdk/openai-compatible dependency
+      Added @ai-sdk/openai-compatible dependency

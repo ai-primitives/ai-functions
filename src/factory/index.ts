@@ -1,7 +1,6 @@
 import { generateText, Output } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@ai-sdk/openai-compatible'
-import { ToolCall as CoreTool } from '@ai-sdk/provider-utils'
 import { LanguageModelV1 } from '@ai-sdk/provider'
 import { z } from 'zod'
 import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise } from '../types'
@@ -18,7 +17,7 @@ function getProvider() {
   return gateway
     ? createOpenAICompatible({
         baseURL: gateway,
-        name: 'openai'
+        name: 'openai',
       } satisfies OpenAICompatibleProviderSettings)
     : openai
 }
@@ -33,10 +32,14 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
       model: getProvider()('gpt-4') as LanguageModelV1,
       prompt: options.prompt || '',
       maxRetries: 2,
-      experimental_output: Output.object({ schema: schema })
+      experimental_output: Output.object({ schema: schema }),
     })
 
-    return result.experimental_output as z.infer<T>
+    if (!result.experimental_output) {
+      throw new Error('No output received from model')
+    }
+
+    return result.experimental_output
   }
 
   fn.schema = schema
@@ -49,25 +52,31 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
   const DEFAULT_MODEL = provider('gpt-4o')
 
   // Validate output format if provided
-  if (options.outputFormat && !['json', 'xml', 'csv'].includes(options.outputFormat)) {
-    throw new Error('Invalid output format. Supported formats are: json, xml, csv')
+  if (options.outputFormat && options.outputFormat !== 'json') {
+    throw new Error('Invalid output format. Only JSON is supported')
   }
 
   const templateFn = async (prompt: string) => {
     currentPrompt = prompt
-    const { text } = await generateText({
+    const result = await generateText({
       model: options.model || DEFAULT_MODEL,
       prompt,
       ...options,
       ...(options.outputFormat && {
-        prompt: `${prompt}\n\nPlease format the response as ${options.outputFormat.toUpperCase()}${
-          options.schema ? ` following this schema:\n${JSON.stringify(options.schema, null, 2)}` :
-          options.outputFormat === 'csv' ? ' with headers' :
-          options.outputFormat === 'xml' ? ' with a root element' : ''
-        }`,
+        prompt: `${prompt}\n\nPlease format the response as JSON${options.schema ? ` following this schema:\n${JSON.stringify(options.schema, null, 2)}` : ''}`,
+        ...(options.outputFormat === 'json' &&
+          options.schema && {
+            experimental_output: Output.object({
+              schema: options.schema instanceof z.ZodType ? options.schema : z.object(options.schema as z.ZodRawShape),
+            }),
+          }),
       }),
     })
-    return text
+
+    if (options.outputFormat === 'json' && result.experimental_output) {
+      return JSON.stringify(result.experimental_output)
+    }
+    return result.text
   }
 
   templateFn.withOptions = async (opts: AIFunctionOptions = {}) => {
@@ -85,16 +94,13 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
       headers: undefined,
       ...options,
       ...(options.outputFormat && {
-        prompt: `${prompt}\n\nPlease format the response as ${options.outputFormat.toUpperCase()}${
-          options.schema ? ` following this schema:\n${JSON.stringify(options.schema, null, 2)}` :
-          options.outputFormat === 'csv' ? ' with headers' :
-          options.outputFormat === 'xml' ? ' with a root element' : ''
-        }`,
-        ...(options.outputFormat === 'json' && options.schema && {
-          experimental_output: Output.object({
-            schema: options.schema instanceof z.ZodType ? options.schema : z.object(options.schema as z.ZodRawShape)
-          })
-        })
+        prompt: `${prompt}\n\nPlease format the response as JSON${options.schema ? ` following this schema:\n${JSON.stringify(options.schema, null, 2)}` : ''}`,
+        ...(options.outputFormat === 'json' &&
+          options.schema && {
+            experimental_output: Output.object({
+              schema: options.schema instanceof z.ZodType ? options.schema : z.object(options.schema as z.ZodRawShape),
+            }),
+          }),
       }),
     })
 
@@ -102,10 +108,26 @@ export function createTemplateFunction(options: AIFunctionOptions = {}): BaseTem
       throw new Error('Invalid response format')
     }
 
-    if ('experimental_output' in result && options.outputFormat === 'json') {
+    if ('experimental_stream' in result) {
+      for await (const chunk of result.experimental_stream) {
+        if (options.outputFormat === 'json') {
+          // For JSON, we accumulate the entire response
+          yield chunk
+        } else {
+          // For text, we split on newlines for list function
+          const lines = chunk.split('\n')
+          for (const line of lines) {
+            if (line) yield line
+          }
+        }
+      }
+    } else if ('experimental_output' in result && options.outputFormat === 'json') {
       yield JSON.stringify(result.experimental_output)
     } else if ('text' in result) {
-      yield result.text
+      const lines = result.text.split('\n')
+      for (const line of lines) {
+        if (line) yield line
+      }
     } else {
       throw new Error('No text available in response')
     }

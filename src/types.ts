@@ -4,7 +4,7 @@ import { LanguageModelV1 } from 'ai'
 export interface AIFunctionOptions {
   model?: LanguageModelV1
   prompt?: string
-  outputFormat?: 'json' | 'xml' | 'csv'
+  outputFormat?: 'json'
   schema?: z.ZodType | Record<string, unknown>
 }
 
@@ -30,12 +30,14 @@ export type AITemplateFunction = BaseTemplateFunction & {
 }
 
 export interface AI extends AITemplateFunction {
-  categorizeProduct: AIFunction<z.ZodObject<{
-    productType: z.ZodEnum<['App', 'API', 'Marketplace', 'Platform', 'Packaged Service', 'Professional Service', 'Website']>
-    customer: z.ZodString
-    solution: z.ZodString
-    description: z.ZodString
-  }>>
+  categorizeProduct: AIFunction<
+    z.ZodObject<{
+      productType: z.ZodEnum<['App', 'API', 'Marketplace', 'Platform', 'Packaged Service', 'Professional Service', 'Website']>
+      customer: z.ZodString
+      solution: z.ZodString
+      description: z.ZodString
+    }>
+  >
 }
 
 export type ListFunction = BaseTemplateFunction
