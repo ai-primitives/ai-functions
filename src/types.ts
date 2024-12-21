@@ -6,14 +6,6 @@ export type Queue = Omit<PQueue, 'add'> & {
   add<T>(fn: () => Promise<T> | T): Promise<T>
 }
 
-export interface ConcurrencyOptions {
-  concurrency?: number
-  autoStart?: boolean
-  intervalCap?: number
-  interval?: number
-  carryoverConcurrencyCount?: boolean
-}
-
 export interface RetryOptions {
   maxRetries: number;
   initialDelay: number;
@@ -31,7 +23,6 @@ export interface RequestHandlingOptions {
   retry?: RetryOptions;
   rateLimit?: RateLimitOptions;
   timeout?: number;
-  concurrency?: ConcurrencyOptions;
 }
 
 export interface StreamProgress {
@@ -64,7 +55,7 @@ export interface AIFunctionOptions {
   presencePenalty?: number
   stop?: string | string[]
   seed?: number
-  concurrency?: ConcurrencyOptions
+  concurrency?: number
   requestHandling?: RequestHandlingOptions;
   streaming?: StreamingOptions;
 }

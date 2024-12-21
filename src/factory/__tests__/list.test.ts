@@ -46,7 +46,7 @@ describe('createListFunction', () => {
     const tasks = topics.map(topic => 
       list.withOptions({
         prompt: `5 popular ${topic}`,
-        concurrency: { concurrency: 2 }
+        concurrency: 2
       })
     )
     
@@ -63,7 +63,7 @@ describe('createListFunction', () => {
     const streams = topics.map(topic => 
       list.withOptions({
         prompt: `3 popular ${topic}`,
-        concurrency: { concurrency: 2 }
+        concurrency: 2
       })
     )
     

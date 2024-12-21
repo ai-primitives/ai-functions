@@ -10,10 +10,8 @@ function createQueue(options: AIFunctionOptions): Queue | undefined {
   }
 
   return new PQueue({
-    concurrency: options.concurrency.concurrency || 1,
+    concurrency: options.concurrency,
     autoStart: true,
-    intervalCap: options.concurrency.intervalCap || 1,
-    interval: options.concurrency.interval || 0,
     carryoverConcurrencyCount: true,
   }) as Queue
 }
@@ -31,7 +29,7 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
     // Create a new queue if options have changed
     if (!currentQueue || 
         !queueOptions?.concurrency || 
-        queueOptions.concurrency.concurrency !== options.concurrency.concurrency) {
+        queueOptions.concurrency !== options.concurrency) {
       currentQueue = createQueue(options)
       queueOptions = options
     }

@@ -1,4 +1,4 @@
-import { AIRequestError, RequestHandlingOptions, RetryOptions, RateLimitOptions, ConcurrencyOptions } from '../types';
+import { AIRequestError, RequestHandlingOptions, RetryOptions, RateLimitOptions, AIFunctionOptions } from '../types';
 import PQueue from 'p-queue';
 
 const DEFAULT_RETRY_OPTIONS: RetryOptions = {
@@ -65,23 +65,18 @@ export class RequestHandler {
   private timeout: number;
   private queue: PQueue;
 
-  constructor(options: RequestHandlingOptions = {}) {
-    this.rateLimiter = new RateLimiter(options.rateLimit || DEFAULT_RATE_LIMIT_OPTIONS);
-    this.retryOptions = options.retry || DEFAULT_RETRY_OPTIONS;
-    this.timeout = options.timeout || 120000;
+  constructor(options: AIFunctionOptions = {}) {
+    const requestHandling = options.requestHandling || {};
+    this.rateLimiter = new RateLimiter(requestHandling.rateLimit || DEFAULT_RATE_LIMIT_OPTIONS);
+    this.retryOptions = requestHandling.retry || DEFAULT_RETRY_OPTIONS;
+    this.timeout = requestHandling.timeout || 120000;
     
     // Initialize queue with concurrency options
     const queueOptions: PQueue.Options = {
-      concurrency: options.concurrency?.concurrency || 1,
-      autoStart: options.concurrency?.autoStart ?? true,
-      carryoverConcurrencyCount: options.concurrency?.carryoverConcurrencyCount ?? true,
+      concurrency: options.concurrency || 1,
+      autoStart: true,
+      carryoverConcurrencyCount: true,
     };
-
-    // Only add interval-related options if they are specified
-    if (options.concurrency?.intervalCap !== undefined) {
-      queueOptions.intervalCap = options.concurrency.intervalCap;
-      queueOptions.interval = options.concurrency?.interval || 1000;
-    }
 
     this.queue = new PQueue(queueOptions);
   }
@@ -142,4 +137,4 @@ export class RequestHandler {
   }
 }
 
-export const createRequestHandler = (options?: RequestHandlingOptions) => new RequestHandler(options); 
+export const createRequestHandler = (options?: AIFunctionOptions) => new RequestHandler(options); 

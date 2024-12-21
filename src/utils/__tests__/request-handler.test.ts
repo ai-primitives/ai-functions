@@ -25,12 +25,14 @@ describe('RequestHandler', () => {
 
   it('should retry on failure', async () => {
     const handler = createRequestHandler({
-      retry: {
-        maxRetries: 2,
-        initialDelay: 100,
-        maxDelay: 1000,
-        backoffFactor: 2,
-      },
+      requestHandling: {
+        retry: {
+          maxRetries: 2,
+          initialDelay: 100,
+          maxDelay: 1000,
+          backoffFactor: 2,
+        }
+      }
     })
 
     const operation = vi.fn()
@@ -54,10 +56,12 @@ describe('RequestHandler', () => {
 
   it('should respect rate limits', async () => {
     const handler = createRequestHandler({
-      rateLimit: {
-        requestsPerMinute: 60,
-        burstLimit: 2,
-      },
+      requestHandling: {
+        rateLimit: {
+          requestsPerMinute: 60,
+          burstLimit: 2,
+        }
+      }
     })
 
     const operation = vi.fn().mockResolvedValue('success')
@@ -83,9 +87,11 @@ describe('RequestHandler', () => {
   it('should handle timeouts', async () => {
     const timeout = 1000;
     const handler = createRequestHandler({
-      timeout,
-      retry: {
-        maxRetries: 0
+      requestHandling: {
+        timeout,
+        retry: {
+          maxRetries: 0
+        }
       }
     })
 
@@ -115,12 +121,14 @@ describe('RequestHandler', () => {
 
   it('should respect max retries', async () => {
     const handler = createRequestHandler({
-      retry: {
-        maxRetries: 2,
-        initialDelay: 100,
-        maxDelay: 1000,
-        backoffFactor: 2,
-      },
+      requestHandling: {
+        retry: {
+          maxRetries: 2,
+          initialDelay: 100,
+          maxDelay: 1000,
+          backoffFactor: 2,
+        }
+      }
     })
 
     const operation = vi.fn().mockRejectedValue(new Error('Persistent error'))
@@ -138,11 +146,7 @@ describe('RequestHandler', () => {
 
   it('should handle concurrent requests with queue', async () => {
     const handler = createRequestHandler({
-      concurrency: {
-        concurrency: 2,
-        intervalCap: 2,
-        interval: 1000
-      }
+      concurrency: 2
     })
 
     const operation = vi.fn().mockResolvedValue('success')

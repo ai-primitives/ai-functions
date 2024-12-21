@@ -236,11 +236,7 @@ describe('createTemplateFunction', () => {
   describe('concurrency handling', () => {
     it('should respect concurrency limits', async () => {
       const fn = createTemplateFunction({
-        concurrency: { 
-          concurrency: 2,
-          interval: 1000,
-          intervalCap: 2
-        }
+        concurrency: 2
       })
       const startTime = Date.now()
       const tasks = Array(5).fill(null).map((_, i) => 
@@ -261,7 +257,7 @@ describe('createTemplateFunction', () => {
 
     it('should handle concurrent streaming requests', async () => {
       const fn = createTemplateFunction({
-        concurrency: { concurrency: 2 }
+        concurrency: 2
       })
       const streams = Array(3).fill(null).map((_, i) => 
         fn`generate a short story about item ${i}`
@@ -286,10 +282,7 @@ describe('createTemplateFunction', () => {
 
     it('should queue requests when concurrency limit is reached', async () => {
       const fn = createTemplateFunction({
-        concurrency: { 
-          concurrency: 1,
-          autoStart: true
-        }
+        concurrency: 1
       })
       const executionOrder: number[] = []
       
@@ -309,7 +302,7 @@ describe('createTemplateFunction', () => {
 
     it('should handle errors in concurrent requests', async () => {
       const fn = createTemplateFunction({
-        concurrency: { concurrency: 2 },
+        concurrency: 2,
         outputFormat: 'json'
       })
       const tasks = Array(3).fill(null).map((_, i) => 
