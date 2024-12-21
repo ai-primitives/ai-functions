@@ -6,6 +6,7 @@ import { Response } from 'undici'
 import { z } from 'zod'
 import PQueue from 'p-queue'
 import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue } from '../types'
+import { createRequestHandler } from '../utils/request-handler';
 
 // PLACEHOLDER: imports and type definitions
 
@@ -42,20 +43,24 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
       return { schema }
     }
 
-    const result = await generateText({
-      model: options.model || getProvider()('gpt-4o-mini') as LanguageModelV1,
-      prompt: options.prompt || '',
-      maxRetries: 2,
-      experimental_output: Output.object({ schema: schema }),
-      system: options.system,
-      temperature: options.temperature,
-      maxTokens: options.maxTokens,
-      topP: options.topP,
-      frequencyPenalty: options.frequencyPenalty,
-      presencePenalty: options.presencePenalty,
-      stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
-      seed: options.seed,
-    })
+    const requestHandler = createRequestHandler(options.requestHandling);
+
+    const result = await requestHandler.execute(async () => {
+      return generateText({
+        model: options.model || getProvider()('gpt-4o-mini') as LanguageModelV1,
+        prompt: options.prompt || '',
+        maxRetries: 2,
+        experimental_output: Output.object({ schema: schema }),
+        system: options.system,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        topP: options.topP,
+        frequencyPenalty: options.frequencyPenalty,
+        presencePenalty: options.presencePenalty,
+        stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+        seed: options.seed,
+      });
+    });
 
     if (!result.experimental_output) {
       throw new Error('No output received from model')

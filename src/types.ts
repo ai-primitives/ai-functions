@@ -14,6 +14,25 @@ export interface ConcurrencyOptions {
   carryoverConcurrencyCount?: boolean
 }
 
+export interface RetryOptions {
+  maxRetries: number;
+  initialDelay: number;
+  maxDelay: number;
+  backoffFactor: number;
+}
+
+export interface RateLimitOptions {
+  requestsPerMinute: number;
+  burstLimit?: number;
+  timeoutMs?: number;
+}
+
+export interface RequestHandlingOptions {
+  retry?: RetryOptions;
+  rateLimit?: RateLimitOptions;
+  timeout?: number;
+}
+
 export interface AIFunctionOptions {
   model?: LanguageModelV1
   prompt?: string
@@ -29,6 +48,7 @@ export interface AIFunctionOptions {
   stop?: string | string[]
   seed?: number
   concurrency?: ConcurrencyOptions
+  requestHandling?: RequestHandlingOptions;
 }
 
 export type AIFunction<T extends z.ZodTypeAny = z.ZodTypeAny> = {
@@ -66,3 +86,14 @@ export interface AI extends AITemplateFunction {
 }
 
 export type ListFunction = BaseTemplateFunction
+
+export class AIRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly cause?: unknown,
+    public readonly retryable: boolean = true
+  ) {
+    super(message);
+    this.name = 'AIRequestError';
+  }
+}
