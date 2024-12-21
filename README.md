@@ -28,7 +28,7 @@ pnpm add ai-functions
 import { ai, list } from 'ai-functions'
 
 // Simple text generation
-const text = ai`write a blog post in markdown starting with "# ${title}"`
+const text = ai`write a blog post in markdown starting with '# ${title}'`
 
 // Complex objects/arrays dumped to YAML
 const summary = ai`Summarize the itinerary: ${itinerary}`
@@ -60,7 +60,7 @@ const product = await categorizeProduct({ domain: name })
 By default `ai-functions` uses the `openai` provider from the `ai` SDK. You can specify any openai model name as a string.
 
 ```typescript
-const text = ai`write a blog post in markdown starting with "# ${title}"`({ model: 'gpt-4o-mini' })
+const text = ai`write a blog post in markdown starting with "# ${title}"`({ model: 'gpt-4o' })
 ```
 
 Or you can pass in any other provider compatible with the `ai` SDK.
@@ -68,7 +68,7 @@ Or you can pass in any other provider compatible with the `ai` SDK.
 ```typescript
 import { anthropic } from '@ai-sdk/anthropic'
 
-const text = ai`write a function in Typescript called ${name}`({ model: anthropic('claude-3-5-sonnet-20241022') })
+const text = ai`write a function in TypeScript called ${name}`({ model: anthropic('claude-3-5-sonnet-20241022') })
 ```
 
 #### Specifying other options
@@ -83,7 +83,7 @@ const things = await list`fun things to do in ${city}`({ system: 'You are an exp
 
 ```typescript
 const listBlogPosts = (count, topic) => list`${count} blog post titles about ${topic}`
-const writeBlogPost = (title) => ai`write a blog post in markdown starting with "# ${title}"`
+const writeBlogPost = (title) => ai`write a blog post in markdown starting with '# ${title}'`
 
 async function* writeBlog(count, topic) {
   for await (const title of listBlogPosts(count, topic)) {

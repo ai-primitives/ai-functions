@@ -29,43 +29,44 @@ export class RequestHandler {
     const maxAttempts = retryable ? this.retryOptions.maxRetries : 0
     const timeoutMs = isStreaming ? this.streamingTimeout : this.retryOptions.maxDelay
 
+    const executeWithTimeout = async (op: Promise<T> | AsyncGenerator<T>): Promise<T> => {
+      const abortController = new AbortController()
+      const timeoutId = setTimeout(() => {
+        abortController.abort()
+      }, timeoutMs)
+
+      try {
+        if (op instanceof Promise) {
+          const result = await Promise.race([
+            op,
+            new Promise<never>((_, reject) => {
+              abortController.signal.addEventListener('abort', () => {
+                reject(new AIRequestError(`Request timed out after ${timeoutMs}ms`))
+              })
+            })
+          ]) as T
+          return result
+        } else {
+          const chunks: T[] = []
+          for await (const chunk of op) {
+            if (abortController.signal.aborted) {
+              throw new AIRequestError(`Stream timed out after ${timeoutMs}ms`)
+            }
+            chunks.push(chunk)
+          }
+          if (chunks.length === 0) {
+            throw new AIRequestError('No chunks received from stream')
+          }
+          return chunks[chunks.length - 1]
+        }
+      } finally {
+        clearTimeout(timeoutId)
+      }
+    }
+
     while (attempt <= maxAttempts) {
       try {
-        const abortController = new AbortController()
-        const timeoutId = setTimeout(() => {
-          abortController.abort()
-        }, timeoutMs)
-
-        try {
-          const operationResult = operation()
-          if (operationResult instanceof Promise) {
-            const result = await Promise.race([
-              operationResult,
-              new Promise<never>((_, reject) => {
-                abortController.signal.addEventListener('abort', () => {
-                  reject(new AIRequestError(`Request timed out after ${timeoutMs}ms`))
-                })
-              })
-            ])
-            clearTimeout(timeoutId)
-            return result
-          } else {
-            const chunks: T[] = []
-            for await (const chunk of operationResult) {
-              if (abortController.signal.aborted) {
-                throw new AIRequestError(`Stream timed out after ${timeoutMs}ms`)
-              }
-              chunks.push(chunk)
-            }
-            clearTimeout(timeoutId)
-            if (chunks.length === 0) {
-              throw new AIRequestError('No chunks received from stream')
-            }
-            return chunks[chunks.length - 1]
-          }
-        } finally {
-          clearTimeout(timeoutId)
-        }
+        return await executeWithTimeout(operation())
       } catch (error) {
         lastError = error as Error
         
@@ -93,8 +94,15 @@ export class RequestHandler {
     throw lastError || new AIRequestError('Operation failed with no error details')
   }
 
-  async execute<T>(operation: () => Promise<T> | AsyncGenerator<T>, retryable = true, isStreaming = false): Promise<T> {
-    return this.queue.add(() => this.executeWithRetry(operation, retryable, isStreaming))
+  execute<T>(operation: () => Promise<T> | AsyncGenerator<T>, retryable = true, isStreaming = false): Promise<T> {
+    const executeOperation = async (): Promise<T> => {
+      const result = await this.executeWithRetry(operation, retryable, isStreaming);
+      if (result === undefined) {
+        throw new AIRequestError('Operation returned undefined result');
+      }
+      return result as T;
+    };
+    return this.queue.add(executeOperation) as Promise<T>;
   }
 
   get concurrency(): number | undefined {
@@ -124,4 +132,4 @@ export class RequestHandler {
 
 export function createRequestHandler(options: RequestHandlingOptions = {}): RequestHandler {
   return new RequestHandler(options)
-} 
+}                               

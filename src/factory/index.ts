@@ -6,9 +6,10 @@ import { Response } from 'undici'
 import { z } from 'zod'
 import PQueue from 'p-queue'
 import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue } from '../types'
-import { createRequestHandler, type RequestHandlingOptions } from '../utils/request-handler';
+import { createRequestHandler } from '../utils/request-handler';
 import { StreamProgressTracker } from '../utils/stream-progress';
 import { AIRequestError } from '../errors'
+import { RequestHandlingOptions, TemplateResult } from '../types';
 
 // Add this at the top of the file, before any other code
 function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
@@ -147,7 +148,7 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
       try {
         if (options.outputFormat === 'json') {
           try {
-            const model = options.model || openai('gpt-4o-mini', { structuredOutputs: true })
+            const model = options.model || openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o', { structuredOutputs: true })
             if (options.schema) {
               const schema = options.schema instanceof z.ZodType 
                 ? options.schema 

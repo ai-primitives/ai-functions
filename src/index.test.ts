@@ -9,7 +9,7 @@ describe('ai template tag', () => {
     process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key'
   })
 
-  const model = openai('gpt-4o-mini', { structuredOutputs: true })
+  const model = openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o', { structuredOutputs: true })
 
   it('should support basic template literals', async () => {
     const name = 'World'

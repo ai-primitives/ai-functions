@@ -1,9 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { createListFunction } from '../list'
 import { openai } from '@ai-sdk/openai'
 import type { TemplateResult } from '../../types'
 
-const model = openai('gpt-4o-mini')
+beforeEach(() => {
+  process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key'
+  // Ensure AI gateway is configured for cached responses
+  process.env.AI_GATEWAY = process.env.AI_GATEWAY || 'https://api.openai.com/v1'
+})
+
+const model = openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o')
 
 describe('createListFunction', () => {
   it('should generate a list of items', async () => {
@@ -102,4 +108,4 @@ describe('createListFunction', () => {
       expect(result.length).toBeGreaterThan(0)
     })
   })
-})                                                                
+})                                                                      
