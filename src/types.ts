@@ -3,7 +3,7 @@ import type PQueue from 'p-queue'
 import type { LanguageModelV1 } from 'ai'
 
 export type Queue = Omit<PQueue, 'add'> & {
-  add<T>(fn: () => Promise<T> | T): Promise<T>
+  add<T, R = T>(fn: () => Promise<T> | AsyncGenerator<T, void, unknown>): Promise<R>
 }
 
 export interface RetryOptions {
@@ -26,10 +26,12 @@ export interface RequestHandlingOptions {
   maxRetries?: number;
   retryDelay?: number;
   streamingTimeout?: number;
+  concurrency?: number;
   requestHandling?: {
     retry?: RetryOptions;
     rateLimit?: RateLimitOptions;
     timeout?: number;
+    concurrency?: number;
   };
 }
 

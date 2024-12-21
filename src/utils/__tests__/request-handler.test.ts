@@ -149,7 +149,7 @@ describe('RequestHandler', () => {
 
   it('should handle concurrent requests with queue', async () => {
     const handler = createRequestHandler({
-      concurrency: 2
+      requestHandling: { concurrency: 2 }
     })
 
     const operation = vi.fn().mockResolvedValue('success')
@@ -162,4 +162,4 @@ describe('RequestHandler', () => {
     results.forEach(result => expect(result).toBe('success'))
     expect(operation).toHaveBeenCalledTimes(5)
   })
-}) 
+})    

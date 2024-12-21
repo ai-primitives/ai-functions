@@ -50,7 +50,7 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
 
     const performRequest = async (): Promise<string> => {
       try {
-        const model = options.model || openai('gpt-4o-mini')
+        const model = options.model || openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o')
         const streamOptions = {
           model,
           output: 'array' as const,
@@ -97,7 +97,7 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
 
     const performRequest = async function* () {
       try {
-        const model = options.model || openai('gpt-4o-mini')
+        const model = options.model || openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o')
         const streamOptions = {
           model,
           output: 'array' as const,
@@ -128,8 +128,21 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
 
     const queue = getQueue(options)
     if (queue) {
-      const generator = await queue.add(performRequest)
-      yield* generator
+      const operation = performRequest()
+      
+      // Queue the operation based on its type
+      if (operation[Symbol.asyncIterator]) {
+        // For AsyncGenerator, queue each value
+        for await (const value of operation) {
+          yield await queue.add(async () => value)
+        }
+      } else {
+        // For Promise, queue the entire operation
+        yield await queue.add(async () => {
+          const result = await operation
+          return result
+        })
+      }
     } else {
       yield* performRequest()
     }
@@ -235,4 +248,4 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
   }
 
   return createBaseFunction()
-} 
+}                   

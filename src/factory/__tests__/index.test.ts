@@ -5,10 +5,13 @@ import { createListFunction } from '../list'
 import type { AIFunctionOptions } from '../../types'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { ai, list } from '../../index'
 
 describe('createAIFunction', () => {
   beforeEach(() => {
     process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key'
+    // Ensure AI gateway is configured for cached responses
+    process.env.AI_GATEWAY = process.env.AI_GATEWAY || 'https://api.openai.com/v1'
   })
 
   it('should return schema when called without args', async () => {
@@ -325,6 +328,193 @@ describe('createTemplateFunction', () => {
       
       const result2 = JSON.parse(results[2])
       expect(result2.result).toBe('task-2')
+    })
+  })
+
+  describe('composable functions', () => {
+    beforeEach(() => {
+      process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key'
+    })
+
+    it('should support composing list and ai functions', async () => {
+      const { ai, list } = await import('../..')
+      
+      const listBlogPosts = (count: number, topic: string) => 
+        list`${count} blog post titles about ${topic}`({
+          model: openai('gpt-4o')
+        })
+      
+      const writeBlogPost = (title: string) => 
+        ai`write a blog post in markdown starting with '# ${title}'`({
+          model: openai('gpt-4o')
+        })
+
+      const titles = await listBlogPosts(2, 'AI testing')
+      expect(Array.isArray(titles)).toBe(true)
+      expect(titles.length).toBe(2)
+      
+      const content = await writeBlogPost(titles[0])
+      expect(typeof content).toBe('string')
+      expect(content.startsWith('# ')).toBe(true)
+    })
+
+    it('should support composition with async generators', async () => {
+      const { ai, list } = await import('../..')
+      
+      const listBlogPosts = (count: number, topic: string) => 
+        list`${count} blog post titles about ${topic}`({
+          model: openai('gpt-4o')
+        })
+      
+      const writeBlogPost = (title: string) => 
+        ai`write a blog post in markdown starting with '# ${title}'`({
+          model: openai('gpt-4o')
+        })
+
+      async function* writeBlog(count: number, topic: string) {
+        const titles = await listBlogPosts(count, topic)
+        for (const title of titles) {
+          const content = await writeBlogPost(title)
+          yield { title, content }
+        }
+      }
+
+      const posts = []
+      for await (const post of writeBlog(2, 'software testing')) {
+        posts.push(post)
+      }
+
+      expect(posts.length).toBe(2)
+      posts.forEach(post => {
+        expect(post).toHaveProperty('title')
+        expect(post).toHaveProperty('content')
+        expect(typeof post.title).toBe('string')
+        expect(typeof post.content).toBe('string')
+        expect(post.content.startsWith('# ')).toBe(true)
+      })
+    })
+
+    it('should support concurrent composable functions', async () => {
+      const { ai, list } = await import('../..')
+      // Define composable functions exactly as shown in README
+      const listBlogPosts = (count: number, topic: string) => 
+        list`${count} blog post titles about ${topic}`
+
+      const writeBlogPost = (title: string) => 
+        ai`write a blog post in markdown starting with '# ${title}'`
+
+      // Test composition with async iteration
+      async function* writeBlog(count: number, topic: string) {
+        // Get titles
+        const titles = await listBlogPosts(count, topic)
+        
+        // Generate posts one at a time using streaming
+        for (const title of titles) {
+          let content = ''
+          for await (const chunk of writeBlogPost(title)) {
+            content += chunk
+          }
+          yield { title, content }
+        }
+      }
+
+      const posts = []
+      for await (const post of writeBlog(3, 'future of car sales')) {
+        posts.push(post)
+      }
+
+      expect(posts.length).toBe(3)
+      posts.forEach(post => {
+        expect(post).toHaveProperty('title')
+        expect(post).toHaveProperty('content')
+        expect(typeof post.title).toBe('string')
+        expect(typeof post.content).toBe('string')
+        expect(post.content.startsWith('# ')).toBe(true)
+      })
+    })
+  })
+
+  describe('composable functions', () => {
+    it('should support composable function patterns from README', async () => {
+      const count = 2
+      const topic = 'AI development'
+
+      const listBlogPosts = (count: number, topic: string): AsyncIterable<string> => {
+        const result = list`${count} blog post titles about ${topic}`({
+          model: openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o')
+        })
+        return {
+          async *[Symbol.asyncIterator]() {
+            const text = await result
+            for (const line of text.split('\n')) {
+              if (line.trim()) yield line.trim()
+            }
+          }
+        }
+      }
+
+      const writeBlogPost = (title: string): Promise<string> =>
+        ai`write a blog post in markdown starting with '# ${title}'`({
+          model: openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o')
+        })
+
+      const titles: string[] = []
+      for await (const title of listBlogPosts(count, topic)) {
+        titles.push(title)
+      }
+      
+      expect(titles).toBeDefined()
+      expect(titles).toHaveLength(count)
+
+      const firstTitle = titles[0]
+      const content = await writeBlogPost(firstTitle)
+      expect(content).toBeDefined()
+      expect(typeof content).toBe('string')
+      expect(content.startsWith('# ')).toBe(true)
+    })
+
+    it('should support async iteration with composable functions', async () => {
+      const count = 2
+      const topic = 'AI development'
+
+
+      const listBlogPosts = (count: number, topic: string): AsyncIterable<string> => {
+        const result = list`${count} blog post titles about ${topic}`({
+          model: openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o')
+        })
+        return {
+          async *[Symbol.asyncIterator]() {
+            const text = await result
+            for (const line of text.split('\n')) {
+              if (line.trim()) yield line.trim()
+            }
+          }
+        }
+      }
+
+      const writeBlogPost = (title: string): Promise<string> =>
+        ai`write a blog post in markdown starting with '# ${title}'`({
+          model: openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o')
+        })
+
+      async function* writeBlog(count: number, topic: string): AsyncGenerator<{ title: string; content: string }> {
+        for await (const title of listBlogPosts(count, topic)) {
+          const content = await writeBlogPost(title)
+          yield { title, content }
+        }
+      }
+
+      const posts: Array<{ title: string; content: string }> = []
+      for await (const post of writeBlog(count, topic)) {
+        posts.push(post)
+        expect(post).toHaveProperty('title')
+        expect(post).toHaveProperty('content')
+        expect(typeof post.title).toBe('string')
+        expect(typeof post.content).toBe('string')
+        expect(post.content.startsWith('# ')).toBe(true)
+      }
+
+      expect(posts).toHaveLength(count)
     })
   })
 })
