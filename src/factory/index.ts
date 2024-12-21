@@ -6,7 +6,7 @@ import { Response } from 'undici'
 import { z } from 'zod'
 import PQueue from 'p-queue'
 import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue } from '../types'
-import { createRequestHandler } from '../utils/request-handler';
+import { createRequestHandler, type RequestHandlingOptions } from '../utils/request-handler';
 import { StreamProgressTracker } from '../utils/stream-progress';
 
 // PLACEHOLDER: imports and type definitions
@@ -44,7 +44,7 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
       return { schema }
     }
 
-    const requestHandler = createRequestHandler(options.requestHandling);
+    const requestHandler = createRequestHandler({ requestHandling: options.requestHandling });
 
     const result = await requestHandler.execute(async () => {
       return generateText({
@@ -117,8 +117,8 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
   let queue: Queue | undefined
 
   const initQueue = (options: AIFunctionOptions) => {
-    if (!queue && options.concurrency) {
-      queue = new PQueue(options.concurrency)
+    if (!queue) {
+      queue = new PQueue({ concurrency: options.concurrency || 1 })
     }
     return queue
   }

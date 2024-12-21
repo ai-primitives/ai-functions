@@ -71,19 +71,16 @@ export class RequestHandler {
     this.retryOptions = requestHandling.retry || DEFAULT_RETRY_OPTIONS;
     this.timeout = requestHandling.timeout || 120000;
     
-    // Initialize queue with concurrency options
-    const queueOptions: PQueue.Options = {
+    this.queue = new PQueue({
       concurrency: options.concurrency || 1,
       autoStart: true,
       carryoverConcurrencyCount: true,
-    };
-
-    this.queue = new PQueue(queueOptions);
+    });
   }
 
   async execute<T>(operation: () => Promise<T>): Promise<T> {
     // Wrap the operation in a queue task
-    return this.queue.add(async () => {
+    const result = await this.queue.add(async () => {
       let lastError: Error | undefined;
       let delay = this.retryOptions.initialDelay;
 
@@ -98,33 +95,24 @@ export class RequestHandler {
             }, this.timeout);
           });
 
-          const operationPromise = operation();
-          const result = await Promise.race([operationPromise, timeoutPromise]) as T;
-
-          return result;
+          const operationResult = await Promise.race([operation(), timeoutPromise]) as T;
+          return operationResult;
         } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
+          lastError = error as Error;
           
-          if (error instanceof AIRequestError && !error.retryable) {
-            throw error;
-          }
-
           if (attempt === this.retryOptions.maxRetries) {
-            throw new AIRequestError(
-              `Failed after ${attempt + 1} attempts: ${lastError.message}`,
-              lastError,
-              false
-            );
+            throw lastError;
           }
 
-          // Wait for the delay before retrying
           await new Promise(resolve => setTimeout(resolve, delay));
           delay = Math.min(delay * this.retryOptions.backoffFactor, this.retryOptions.maxDelay);
         }
       }
 
       throw lastError;
-    });
+    }) as T;
+
+    return result;
   }
 
   // Add method to get queue size and pending count
@@ -137,4 +125,6 @@ export class RequestHandler {
   }
 }
 
-export const createRequestHandler = (options?: AIFunctionOptions) => new RequestHandler(options); 
+export const createRequestHandler = (options?: AIFunctionOptions) => new RequestHandler(options);
+
+export type { RequestHandlingOptions }; 

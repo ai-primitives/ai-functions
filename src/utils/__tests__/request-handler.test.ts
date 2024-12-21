@@ -90,7 +90,10 @@ describe('RequestHandler', () => {
       requestHandling: {
         timeout,
         retry: {
-          maxRetries: 0
+          maxRetries: 0,
+          initialDelay: 100,
+          maxDelay: 1000,
+          backoffFactor: 2
         }
       }
     })
