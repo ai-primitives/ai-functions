@@ -45,27 +45,35 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
       frequencyPenalty: options.frequencyPenalty,
       presencePenalty: options.presencePenalty,
       stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
-      seed: options.seed,
-      system: options.system,
+      seed: options.seed
     }
 
     const performRequest = async () => {
       try {
         const model = options.model || openai('gpt-4o-mini')
-        const { elementStream } = streamObject({
+        const streamOptions = {
           model,
-          output: 'array',
+          output: 'array' as const,
           schema: z.string(),
-          prompt: prompt ? `Generate a list of items based on this prompt: ${prompt}` : 'Generate a list of items',
-          ...modelParams,
-        })
+          prompt: `Generate a list of items based on this prompt: ${prompt}`,
+          system: options.system,
+          temperature: options.temperature,
+          maxTokens: options.maxTokens,
+          topP: options.topP,
+          frequencyPenalty: options.frequencyPenalty,
+          presencePenalty: options.presencePenalty,
+          stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+          seed: options.seed
+        }
 
+        const { elementStream } = streamObject(streamOptions)
         const elements: string[] = []
+
         for await (const item of elementStream) {
           elements.push(item)
         }
 
-        return elements.join('\n') || 'No items generated'
+        return elements.join('\n')
       } catch (error) {
         if (error instanceof Error) {
           throw error
@@ -92,20 +100,28 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
       frequencyPenalty: options.frequencyPenalty,
       presencePenalty: options.presencePenalty,
       stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
-      seed: options.seed,
-      system: options.system,
+      seed: options.seed
     }
 
     const performRequest = async function* () {
       try {
         const model = options.model || openai('gpt-4o-mini')
-        const { elementStream } = streamObject({
+        const streamOptions = {
           model,
-          output: 'array',
+          output: 'array' as const,
           schema: z.string(),
           prompt: `Generate a list of items based on this prompt: ${prompt}`,
-          ...modelParams,
-        })
+          system: options.system,
+          temperature: options.temperature,
+          maxTokens: options.maxTokens,
+          topP: options.topP,
+          frequencyPenalty: options.frequencyPenalty,
+          presencePenalty: options.presencePenalty,
+          stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+          seed: options.seed
+        }
+
+        const { elementStream } = streamObject(streamOptions)
 
         for await (const item of elementStream) {
           yield item
@@ -188,20 +204,23 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
           throw new Error('Template literal slots must match provided values')
         }
 
-        const prompt = strings.reduce((acc, str, i) => acc + str + (values[i] || ''), '')
+        const lastValue = values[values.length - 1]
+        const options = typeof lastValue === 'object' && !Array.isArray(lastValue) 
+          ? { ...defaultOptions, ...lastValue as AIFunctionOptions }
+          : defaultOptions
+        const actualValues = typeof lastValue === 'object' && !Array.isArray(lastValue)
+          ? values.slice(0, -1)
+          : values
+
+        const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
         currentPrompt = prompt
-        return createAsyncIterablePromise(templateFn(prompt, defaultOptions), prompt, defaultOptions)
+        return createAsyncIterablePromise(templateFn(prompt, options), prompt, options)
       }
 
       const options = { ...defaultOptions, ...stringsOrOptions }
       return createAsyncIterablePromise(templateFn('', options), '', options)
     },
     {
-      withOptions: (opts: AIFunctionOptions = {}) => {
-        const prompt = opts.prompt || currentPrompt || ''
-        const options = { ...defaultOptions, ...opts }
-        return createAsyncIterablePromise(templateFn(prompt, options), prompt, options) as AsyncIterablePromise<string>
-      },
       [Symbol.asyncIterator]: (): AsyncIterator<string> => asyncIterator(currentPrompt || '', defaultOptions)
     }
   ) as BaseTemplateFunction

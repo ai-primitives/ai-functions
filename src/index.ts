@@ -20,9 +20,16 @@ const categorizeProduct = createAIFunction(
 )
 
 // Create the main AI object with template literal and async iteration support
+function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
+  return Array.isArray(value) && 'raw' in value
+}
+
 function createWrappedTemplateFunction(baseFn: BaseTemplateFunction): BaseTemplateFunction {
   const wrappedFn = function (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): Promise<string> {
-    return baseFn(stringsOrOptions as TemplateStringsArray, ...values)
+    if (!isTemplateStringsArray(stringsOrOptions)) {
+      return baseFn(values.shift() as TemplateStringsArray, ...values, stringsOrOptions)
+    }
+    return baseFn(stringsOrOptions, ...values)
   }
 
   // Make wrappedFn async iterable by delegating to baseFn
@@ -33,8 +40,6 @@ function createWrappedTemplateFunction(baseFn: BaseTemplateFunction): BaseTempla
     writable: true,
     configurable: true,
   })
-
-  wrappedFn.withOptions = baseFn.withOptions.bind(baseFn)
 
   return wrappedFn as BaseTemplateFunction
 }

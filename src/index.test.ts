@@ -1,26 +1,26 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import { ai } from './index'
 import { z } from 'zod'
-import type { AIFunctionOptions } from './types'
+import type { AIFunctionOptions, AsyncIterablePromise } from './types'
 import { openai } from '@ai-sdk/openai'
 
 describe('ai template tag', () => {
+  beforeEach(() => {
+    process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key'
+  })
+
   const model = openai('gpt-4o-mini', { structuredOutputs: true })
 
   it('should support basic template literals', async () => {
     const name = 'World'
-    const config: AIFunctionOptions = { model }
-    const result = await ai`Hello ${name}${config}`
+    const result = await ai`Hello ${name}`({ model })
     expect(typeof result).toBe('string')
     expect(result.length).toBeGreaterThan(0)
   })
 
   it('should support configuration object', async () => {
     const name = 'World'
-    const config: AIFunctionOptions = {
-      model,
-    }
-    const result = await ai`Hello ${name}${config}`
+    const result = await ai`Hello ${name}`({ model })
     expect(typeof result).toBe('string')
     expect(result.length).toBeGreaterThan(0)
   })
@@ -31,12 +31,11 @@ describe('ai template tag', () => {
       timestamp: z.number(),
     })
 
-    const config: AIFunctionOptions = {
+    const result = await ai`Generate a greeting with the current timestamp`({
       model,
       outputFormat: 'json',
       schema
-    }
-    const result = await ai`Generate a greeting with the current timestamp${config}`
+    })
     const parsed = schema.parse(JSON.parse(result))
     expect(parsed).toBeDefined()
     expect(typeof parsed.greeting).toBe('string')
@@ -44,8 +43,7 @@ describe('ai template tag', () => {
   })
 
   it('should support streaming responses', async () => {
-    const config: AIFunctionOptions = { model }
-    const stream = ai`List some items${config}`
+    const stream = ai`List some items`({ model }) as AsyncIterablePromise<string>
     const collected: string[] = []
 
     for await (const chunk of stream) {

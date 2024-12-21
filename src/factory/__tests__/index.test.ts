@@ -187,8 +187,8 @@ describe('createTemplateFunction', () => {
   it('should support deterministic output with seed', async () => {
     const fn = createTemplateFunction()
     const prompt = 'Generate a random number between 1 and 10'
-    const result1 = await fn.withOptions({ seed: 42, prompt })
-    const result2 = await fn.withOptions({ seed: 42, prompt })
+    const result1 = await fn`${prompt}`({ seed: 42 })
+    const result2 = await fn`${prompt}`({ seed: 42 })
     expect(result1).toBe(result2)
   })
 
@@ -223,9 +223,8 @@ describe('createTemplateFunction', () => {
 
   it('should support system parameter in list function', async () => {
     const list = createListFunction()
-    const result = await list.withOptions({
-      system: 'You are a helpful assistant that provides concise, one-word answers.',
-      prompt: 'List 3 programming languages'
+    const result = await list`List 3 programming languages`({
+      system: 'You are a helpful assistant that provides concise, one-word answers.'
     })
     expect(result).toBeDefined()
     const items = result.split('\n')
