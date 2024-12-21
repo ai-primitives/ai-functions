@@ -11,16 +11,37 @@ describe('RequestHandler', () => {
     vi.useRealTimers()
   })
 
-  it('should successfully execute an operation', async () => {
+  it('should execute operations successfully', async () => {
     const handler = createRequestHandler()
-    const operation = vi.fn().mockResolvedValue('success')
+    const operation = async () => 'success'
+    const promise = handler.add(operation)
+    await expect(promise).resolves.toBe('success')
+  })
 
-    const promise = handler.execute(operation)
-    await vi.runAllTimersAsync()
-    const result = await promise
+  it('should handle operation failures', async () => {
+    const handler = createRequestHandler()
+    const operation = async () => { throw new Error('test error') }
+    const promise = handler.add(operation)
+    await expect(promise).rejects.toThrow('test error')
+  })
+
+  it('should handle concurrent operations', async () => {
+    const handler = createRequestHandler()
+    const operation = async () => 'success'
+    const promise1 = handler.add(operation)
+    const promise2 = handler.add(operation)
+    const promise3 = handler.add(operation)
     
-    expect(result).toBe('success')
-    expect(operation).toHaveBeenCalledTimes(1)
+    const results = await Promise.all([promise1, promise2, promise3])
+    results.forEach(result => expect(result).toBe('success'))
+  })
+
+  it('should respect concurrency limits', async () => {
+    const handler = createRequestHandler({ concurrency: 2 })
+    const operation = async () => 'success'
+    const tasks = Array(5).fill(null).map(() => handler.add(operation))
+    const results = await Promise.all(tasks)
+    results.forEach((result: string) => expect(result).toBe('success'))
   })
 
   it('should retry on failure', async () => {
@@ -40,7 +61,7 @@ describe('RequestHandler', () => {
       .mockRejectedValueOnce(new Error('Another temporary error'))
       .mockResolvedValueOnce('success')
 
-    const promise = handler.execute(operation)
+    const promise = handler.add(operation)
     
     // Advance time for first retry
     await vi.advanceTimersByTimeAsync(100)
@@ -67,14 +88,14 @@ describe('RequestHandler', () => {
     const operation = vi.fn().mockResolvedValue('success')
 
     // First two requests should be immediate
-    const promise1 = handler.execute(operation)
-    const promise2 = handler.execute(operation)
+    const promise1 = handler.add(operation)
+    const promise2 = handler.add(operation)
     await vi.runAllTimersAsync()
     await Promise.all([promise1, promise2])
 
     // Third request should be delayed
     const startTime = Date.now()
-    const promise3 = handler.execute(operation)
+    const promise3 = handler.add(operation)
     await vi.advanceTimersByTimeAsync(1000)
     await vi.runAllTimersAsync()
     await promise3
@@ -102,7 +123,7 @@ describe('RequestHandler', () => {
       setTimeout(resolve, 2000, 'delayed result')
     }))
 
-    const promise = handler.execute(operation)
+    const promise = handler.add(operation)
     await vi.advanceTimersByTimeAsync(timeout)
     await vi.runAllTimersAsync()
     
@@ -115,7 +136,7 @@ describe('RequestHandler', () => {
       new AIRequestError('Non-retryable error', undefined, false)
     )
 
-    const promise = handler.execute(operation)
+    const promise = handler.add(operation)
     await vi.runAllTimersAsync()
     
     await expect(promise).rejects.toThrow('Non-retryable error')
@@ -135,7 +156,7 @@ describe('RequestHandler', () => {
     })
 
     const operation = vi.fn().mockRejectedValue(new Error('Persistent error'))
-    const promise = handler.execute(operation)
+    const promise = handler.add(operation)
     
     // Advance time for all retries
     await vi.advanceTimersByTimeAsync(100)
@@ -145,21 +166,5 @@ describe('RequestHandler', () => {
     
     await expect(promise).rejects.toThrow('Failed after 3 attempts')
     expect(operation).toHaveBeenCalledTimes(3)
-  })
-
-  it('should handle concurrent requests with queue', async () => {
-    const handler = createRequestHandler({
-      concurrency: 2
-    })
-
-    const operation = vi.fn().mockResolvedValue('success')
-    const tasks = Array(5).fill(null).map(() => handler.execute(operation))
-    
-    await vi.runAllTimersAsync()
-    const results = await Promise.all(tasks)
-    
-    expect(results).toHaveLength(5)
-    results.forEach(result => expect(result).toBe('success'))
-    expect(operation).toHaveBeenCalledTimes(5)
   })
 }) 

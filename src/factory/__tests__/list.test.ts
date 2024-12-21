@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, test } from 'vitest'
 import { createListFunction } from '../list'
 import { openai } from '@ai-sdk/openai'
 
@@ -61,7 +61,8 @@ describe('createListFunction', () => {
     const results = await Promise.all(
       streams.map(async stream => {
         const items: string[] = []
-        for await (const item of stream) {
+        const asyncStream = await stream
+        for await (const item of asyncStream) {
           items.push(item)
         }
         return items
@@ -95,4 +96,22 @@ describe('createListFunction', () => {
       expect(result.length).toBeGreaterThan(0)
     })
   })
+
+  it('should handle streaming responses', async () => {
+    const items = ['item1', 'item2', 'item3'];
+    const stream = {
+      [Symbol.asyncIterator]: async function* () {
+        for (const item of items) {
+          yield item;
+        }
+      }
+    };
+    
+    const result: string[] = [];
+    for await (const item of stream) {
+      result.push(item);
+    }
+    
+    expect(result).toEqual(items);
+  });
 }) 

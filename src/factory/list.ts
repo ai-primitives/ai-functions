@@ -170,13 +170,19 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
     const result = Object.assign(
       (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts }),
       {
-        [Symbol.asyncIterator]: () => asyncIterator(prompt, options),
+        [Symbol.asyncIterator]: async function* () {
+          const response = await templateFn(prompt, options)
+          yield response
+        },
         call: (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts }),
-        then: promise.then.bind(promise),
-        catch: promise.catch.bind(promise),
-        finally: promise.finally.bind(promise),
+        then: (onfulfilled?: ((value: string) => string | PromiseLike<string>) | null | undefined) =>
+          templateFn(prompt, options).then(onfulfilled),
+        catch: (onrejected?: ((reason: any) => string | PromiseLike<string>) | null | undefined) =>
+          templateFn(prompt, options).catch(onrejected),
+        finally: (onfinally?: (() => void) | null | undefined) =>
+          templateFn(prompt, options).finally(onfinally)
       }
-    ) as TemplateResult
+    ) as unknown as TemplateResult
 
     return result
   }

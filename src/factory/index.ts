@@ -1,13 +1,13 @@
-import { generateText, generateObject, Output, type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
+import { generateText, streamText, generateObject, Output, type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@ai-sdk/openai-compatible'
 import { LanguageModelV1 } from '@ai-sdk/provider'
 import { Response } from 'undici'
 import { z } from 'zod'
 import PQueue from 'p-queue'
-import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue } from '../types'
-import { createRequestHandler, type RequestHandlingOptions } from '../utils/request-handler';
-import { StreamProgressTracker } from '../utils/stream-progress';
+import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue, TemplateResult } from '../types'
+import { createRequestHandler, type RequestHandlingOptions } from '../utils/request-handler'
+import { StreamProgressTracker } from '../utils/stream-progress'
 import { AIRequestError } from '../errors'
 
 // Add this at the top of the file, before any other code
@@ -52,12 +52,12 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
 
     const requestHandler = createRequestHandler({ requestHandling: options.requestHandling });
 
-    const result = await requestHandler.execute(async () => {
+    const result = await requestHandler.add(async () => {
       return generateText({
         model: options.model || getProvider()('gpt-4o-mini') as LanguageModelV1,
         prompt: options.prompt || '',
         maxRetries: 2,
-        experimental_output: Output.object({ schema: schema }),
+        experimental_output: Output.object({ schema }),
         system: options.system,
         temperature: options.temperature,
         maxTokens: options.maxTokens,
@@ -118,228 +118,263 @@ export function createTextResponse(result: GenerateResult): Response {
   })
 }
 
-export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): BaseTemplateFunction {
-  let currentPrompt: string | undefined
-  let queue: Queue | undefined
-
-  const initQueue = (options: AIFunctionOptions) => {
-    if (!queue && options.concurrency) {
-      queue = new PQueue({ concurrency: options.concurrency })
+export function createTemplateFunction(): BaseTemplateFunction {
+  const templateFn = function (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult {
+    if (!isTemplateStringsArray(stringsOrOptions)) {
+      return templateFn`${stringsOrOptions || ''}`
     }
-    return queue
-  }
 
-  const templateFn = async (prompt: string, options: AIFunctionOptions = defaultOptions): Promise<string> => {
-    currentPrompt = prompt
+    const prompt = String.raw({ raw: stringsOrOptions }, ...values)
     
-    const modelParams = {
-      temperature: options.temperature,
-      maxTokens: options.maxTokens,
-      topP: options.topP,
-      frequencyPenalty: options.frequencyPenalty,
-      presencePenalty: options.presencePenalty,
-      stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
-      seed: options.seed,
-      system: options.system,
-    }
+    const fn = async (options: AIFunctionOptions = {}) => {
+      const requestHandler = createRequestHandler({ requestHandling: options.requestHandling })
+      
+      const model = options.model || getProvider()('gpt-4o-mini', { 
+        structuredOutputs: options.outputFormat === 'json' 
+      }) as LanguageModelV1
 
-    const executeRequest = async (): Promise<string> => {
-      try {
-        if (options.outputFormat === 'json') {
-          try {
-            const model = options.model || openai('gpt-4o-mini', { structuredOutputs: true })
-            if (options.schema) {
-              const schema = options.schema instanceof z.ZodType 
-                ? options.schema 
-                : z.object(Object.fromEntries(
-                    Object.entries(options.schema as Record<string, string>).map(([key, type]) => [
-                      key,
-                      type === 'string' ? z.string() :
-                      type === 'number' ? z.number() :
-                      type === 'boolean' ? z.boolean() :
-                      type === 'array' ? z.array(z.unknown()) :
-                      type === 'object' ? z.record(z.string(), z.unknown()) :
-                      z.unknown()
-                    ])
-                  ))
-              const result = await generateObject({
-                model,
-                schema,
-                prompt,
-                ...modelParams,
-              })
-              return JSON.stringify(result.object)
+      if (options.outputFormat === 'json') {
+        const result = await requestHandler.add(async () => {
+          let schema: z.ZodType
+          if (options.schema) {
+            if (options.schema instanceof z.ZodType) {
+              schema = options.schema
             } else {
-              const result = await generateObject({
-                model,
-                output: 'no-schema',
-                prompt,
-                ...modelParams,
-              })
-              return JSON.stringify(result.object)
+              schema = z.object(Object.fromEntries(
+                Object.entries(options.schema as Record<string, string>).map(([key, type]) => [
+                  key,
+                  type === 'string' ? z.string() :
+                  type === 'number' ? z.number() :
+                  type === 'boolean' ? z.boolean() :
+                  type === 'array' ? z.array(z.unknown()) :
+                  type === 'object' ? z.record(z.string(), z.unknown()) :
+                  z.unknown()
+                ])
+              ))
             }
-          } catch (error) {
-            if (error instanceof Error) {
-              throw new AIRequestError(`Invalid JSON format: ${error.message}`, error, false)
-            }
-            throw new AIRequestError('Invalid JSON format', error, false)
+          } else {
+            schema = z.unknown()
           }
-        }
 
-        const result = (await generateText({
-          model: options.model || openai('gpt-4o-mini'),
+          const result = await generateText({
+            model,
+            prompt: `You must respond with a valid JSON object. ${prompt}`,
+            experimental_output: Output.object({ schema }),
+            system: options.system ? `${options.system} You must respond with valid JSON.` : 'You must respond with valid JSON.',
+            temperature: options.temperature ?? 0,
+            maxTokens: options.maxTokens,
+            topP: options.topP ?? 1,
+            frequencyPenalty: options.frequencyPenalty ?? 0,
+            presencePenalty: options.presencePenalty ?? 0,
+            stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+            seed: options.seed,
+          })
+
+          if (!result.experimental_output) {
+            throw new AIRequestError('No output received from model', undefined, true)
+          }
+
+          return JSON.stringify(result.experimental_output)
+        })
+        
+        const templateResult = Object.create(Promise.resolve(result), {
+          [Symbol.asyncIterator]: {
+            value: async function* () {
+              yield result
+            },
+            writable: true,
+            configurable: true
+          },
+          call: {
+            value: async (opts?: AIFunctionOptions) => result,
+            writable: true,
+            configurable: true
+          },
+          then: {
+            value: Promise.resolve(result).then.bind(Promise.resolve(result)),
+            writable: true,
+            configurable: true
+          },
+          catch: {
+            value: Promise.resolve(result).catch.bind(Promise.resolve(result)),
+            writable: true,
+            configurable: true
+          },
+          finally: {
+            value: Promise.resolve(result).finally.bind(Promise.resolve(result)),
+            writable: true,
+            configurable: true
+          }
+        }) as TemplateResult
+        
+        return templateResult
+      }
+      
+      if (options.streaming?.onProgress) {
+        const result = await streamText({
+          model,
           prompt,
-          ...modelParams,
-          ...options,
-        })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
-
-        if (!result) {
-          throw new AIRequestError('No result received from model', undefined, false)
-        }
-
-        return result.text
-      } catch (error) {
-        if (error instanceof Error) {
-          throw error
-        }
-        throw new AIRequestError('Failed to generate text', error, false)
-      }
-    }
-
-    try {
-      const currentQueue = initQueue(options)
-      if (!currentQueue) {
-        return executeRequest()
-      }
-      return currentQueue.add(executeRequest)
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error
-      }
-      throw new AIRequestError('Failed to generate text', error, false)
-    }
-  }
-
-  const asyncIterator = async function* (): AsyncIterator<string> {
-    if (!currentPrompt) {
-      return
-    }
-
-    const options = defaultOptions
-    const modelParams = {
-      temperature: options.temperature,
-      maxTokens: options.maxTokens,
-      topP: options.topP,
-      frequencyPenalty: options.frequencyPenalty,
-      presencePenalty: options.presencePenalty,
-      stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
-      seed: options.seed,
-      system: options.system,
-    }
-
-    const progressTracker = options.streaming ? 
-      new StreamProgressTracker(options.streaming) : undefined;
-
-    const executeRequest = async (): Promise<GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>> => {
-      const result = (await generateText({
-        model: options.model || openai('gpt-4o-mini'),
-        prompt: currentPrompt,
-        maxRetries: 2,
-        ...modelParams,
-        ...options,
-      })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
-
-      if (!result) {
-        throw new Error('No result received from model')
-      }
-
-      return result
-    }
-
-    try {
-      const currentQueue = initQueue(options)
-      const result = currentQueue 
-        ? await currentQueue.add(executeRequest)
-        : await executeRequest()
-
-      if (isStreamingResult(result)) {
-        for await (const chunk of result.experimental_stream) {
-          if (progressTracker) {
-            progressTracker.onChunk(chunk);
+          system: options.system,
+          temperature: options.temperature ?? 0,
+          maxTokens: options.maxTokens,
+          topP: options.topP ?? 1,
+          frequencyPenalty: options.frequencyPenalty ?? 0,
+          presencePenalty: options.presencePenalty ?? 0,
+          stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+          seed: options.seed,
+          onChunk: ({ chunk }) => {
+            if (chunk.type === 'text-delta') {
+              options.streaming?.onProgress?.({
+                type: 'chunk',
+                chunk: chunk.textDelta
+              })
+            }
           }
-          yield chunk
-        }
-        progressTracker?.onComplete();
-      } else if (result) {
-        if (progressTracker) {
-          progressTracker.onChunk(result.text);
-          progressTracker.onComplete();
-        }
-        yield result.text
+        })
+        
+        const templateResult = Object.create(Promise.resolve(result.text), {
+          [Symbol.asyncIterator]: {
+            value: () => result.textStream[Symbol.asyncIterator](),
+            writable: true,
+            configurable: true
+          },
+          call: {
+            value: async (opts?: AIFunctionOptions) => result.text,
+            writable: true,
+            configurable: true
+          },
+          then: {
+            value: Promise.resolve(result.text).then.bind(Promise.resolve(result.text)),
+            writable: true,
+            configurable: true
+          },
+          catch: {
+            value: Promise.resolve(result.text).catch.bind(Promise.resolve(result.text)),
+            writable: true,
+            configurable: true
+          },
+          finally: {
+            value: Promise.resolve(result.text).finally.bind(Promise.resolve(result.text)),
+            writable: true,
+            configurable: true
+          }
+        }) as TemplateResult
+        
+        return templateResult
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to generate text';
-      progressTracker?.onChunk(errorMessage);
-      progressTracker?.onComplete();
-      console.error('Error in asyncIterator:', error)
-      yield errorMessage
+      
+      const result = await requestHandler.add(async () => {
+        return generateText({
+          model,
+          prompt,
+          system: options.system,
+          temperature: options.temperature ?? 0,
+          maxTokens: options.maxTokens,
+          topP: options.topP ?? 1,
+          frequencyPenalty: options.frequencyPenalty ?? 0,
+          presencePenalty: options.presencePenalty ?? 0,
+          stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+          seed: options.seed,
+        })
+      })
+      
+      const templateResult = Object.create(Promise.resolve(result.text), {
+        [Symbol.asyncIterator]: {
+          value: async function* () {
+            yield result.text
+          },
+          writable: true,
+          configurable: true
+        },
+        call: {
+          value: async (opts?: AIFunctionOptions) => result.text,
+          writable: true,
+          configurable: true
+        },
+        then: {
+          value: Promise.resolve(result.text).then.bind(Promise.resolve(result.text)),
+          writable: true,
+          configurable: true
+        },
+        catch: {
+          value: Promise.resolve(result.text).catch.bind(Promise.resolve(result.text)),
+          writable: true,
+          configurable: true
+        },
+        finally: {
+          value: Promise.resolve(result.text).finally.bind(Promise.resolve(result.text)),
+          writable: true,
+          configurable: true
+        }
+      }) as TemplateResult
+      
+      return templateResult
     }
-  }
-
-  const createAsyncIterablePromise = <T extends string>(promise: Promise<T>, prompt: string, options: AIFunctionOptions = defaultOptions): AsyncIterablePromise<T> => {
-    const asyncIterable = {
-      [Symbol.asyncIterator]: asyncIterator
-    }
-    const callablePromise = Object.assign(
-      async (opts?: AIFunctionOptions): Promise<T> => {
-        if (!opts) return promise
-        return templateFn(prompt, { ...options, ...opts }) as Promise<T>
+    
+    const templatePromise = Promise.resolve(fn())
+    const templateResult = Object.create(templatePromise, {
+      [Symbol.asyncIterator]: {
+        value: async function* () {
+          const result = await streamText({
+            model: getProvider()('gpt-4o-mini') as LanguageModelV1,
+            prompt,
+            onChunk: ({ chunk }) => {
+              if (chunk.type === 'text-delta') {
+                void chunk.textDelta
+              }
+            }
+          })
+          for await (const chunk of result.textStream) {
+            yield chunk
+          }
+        },
+        writable: true,
+        configurable: true
       },
-      {
-        then: (onfulfilled?: ((value: T) => T | PromiseLike<T>) | null | undefined, onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.then(onfulfilled, onrejected),
-        catch: (onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.catch(onrejected),
-        finally: (onfinally?: (() => void) | null | undefined): Promise<T> => promise.finally(onfinally),
-        [Symbol.asyncIterator]: asyncIterable[Symbol.asyncIterator]
+      call: {
+        value: fn,
+        writable: true,
+        configurable: true
+      },
+      then: {
+        value: templatePromise.then.bind(templatePromise),
+        writable: true,
+        configurable: true
+      },
+      catch: {
+        value: templatePromise.catch.bind(templatePromise),
+        writable: true,
+        configurable: true
+      },
+      finally: {
+        value: templatePromise.finally.bind(templatePromise),
+        writable: true,
+        configurable: true
       }
-    )
-    return callablePromise as AsyncIterablePromise<T>
+    }) as TemplateResult
+    
+    return templateResult
   }
-
-  const baseFn = Object.assign(
-    (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult => {
-      if (!stringsOrOptions) {
-        return createAsyncIterablePromise(templateFn('', defaultOptions), '', defaultOptions) as TemplateResult
-      }
-
-      if (isTemplateStringsArray(stringsOrOptions)) {
-        const strings = stringsOrOptions
-        if (strings.length - 1 !== values.length) {
-          throw new Error('Template literal slots must match provided values')
-        }
-
-        const lastValue = values[values.length - 1]
-        const options = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
-          ? { ...defaultOptions, ...lastValue as AIFunctionOptions }
-          : defaultOptions
-        const actualValues = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
-          ? values.slice(0, -1)
-          : values
-
-        const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
-        return createAsyncIterablePromise(templateFn(prompt, options), prompt, options) as TemplateResult
-      }
-
-      return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '', { ...defaultOptions, ...stringsOrOptions }) as TemplateResult
+  
+  // Add required properties to make it a BaseTemplateFunction
+  Object.defineProperties(templateFn, {
+    [Symbol.asyncIterator]: {
+      value: function () {
+        return templateFn``[Symbol.asyncIterator]()
+      },
+      writable: true,
+      configurable: true,
     },
-    {
-      withOptions: (opts: AIFunctionOptions = {}) => {
-        const prompt = opts.prompt || currentPrompt || ''
-        return templateFn(prompt, { ...defaultOptions, ...opts })
-      },
-      [Symbol.asyncIterator]: asyncIterator,
-      queue
+    queue: {
+      value: undefined,
+      configurable: true,
+    },
+    withOptions: {
+      value: (options?: AIFunctionOptions) => templateFn(options || {}),
+      writable: true,
+      configurable: true,
     }
-  ) as BaseTemplateFunction
-
-  return baseFn
+  })
+  
+  return templateFn as BaseTemplateFunction
 }

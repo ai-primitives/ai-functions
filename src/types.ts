@@ -31,6 +31,9 @@ export interface RequestHandlingOptions {
     rateLimit?: RateLimitOptions;
     timeout?: number;
   };
+  concurrency?: number;
+  retries?: number;
+  backoff?: number;
 }
 
 export interface StreamProgress {
@@ -76,12 +79,12 @@ export type AIFunction<T extends z.ZodTypeAny = z.ZodTypeAny> = {
   queue?: Queue
 }
 
-export type AsyncIterablePromise<T> = Promise<T> & {
+export type AsyncIterablePromise<T> = Promise<T> & AsyncIterable<T> & {
   (options?: AIFunctionOptions): Promise<T>;
   then: Promise<T>['then'];
   catch: Promise<T>['catch'];
   finally: Promise<T>['finally'];
-  [Symbol.asyncIterator]: () => AsyncIterator<string>;
+  [Symbol.asyncIterator]: () => AsyncIterator<T>;
 }
 
 export type TemplateResult = {
@@ -97,25 +100,15 @@ export interface BaseTemplateFunction {
   (strings: TemplateStringsArray, ...values: unknown[]): TemplateResult;
   (options?: AIFunctionOptions): TemplateResult;
   [Symbol.asyncIterator]: () => AsyncIterator<string>;
-  withOptions: (options?: AIFunctionOptions) => Promise<string>;
   queue?: Queue;
+  withOptions: (options?: AIFunctionOptions) => TemplateResult;
 }
 
 export type AITemplateFunction = BaseTemplateFunction & {
   (strings: TemplateStringsArray, ...values: unknown[]): TemplateResult
-  withOptions: (options?: AIFunctionOptions) => AsyncIterablePromise<string>
 }
 
-export interface AI extends AITemplateFunction {
-  categorizeProduct: AIFunction<
-    z.ZodObject<{
-      productType: z.ZodEnum<['App', 'API', 'Marketplace', 'Platform', 'Packaged Service', 'Professional Service', 'Website']>
-      customer: z.ZodString
-      solution: z.ZodString
-      description: z.ZodString
-    }>
-  >
-}
+export type AI = AITemplateFunction
 
 export type ListFunction = BaseTemplateFunction
 
