@@ -9,16 +9,19 @@ describe('ai template tag', () => {
   const openaiProvider = createOpenAICompatible({
     baseURL: process.env.AI_GATEWAY,
     headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
     }
   })
 
-  const model: LanguageModelV1 = openaiProvider.chatModel('gpt-3.5-turbo')
+  const model: LanguageModelV1 = openaiProvider.chatModel('gpt-4')
 
   it('should support basic template literals', async () => {
     const name = 'World'
-    const result = await ai`Hello ${name}`
+    const config: AIFunctionOptions = { model }
+    const result = await ai`Hello ${name}${config}`
     expect(typeof result).toBe('string')
+    expect(result.length).toBeGreaterThan(0)
   })
 
   it('should support configuration object', async () => {
@@ -28,6 +31,7 @@ describe('ai template tag', () => {
     }
     const result = await ai`Hello ${name}${config}`
     expect(typeof result).toBe('string')
+    expect(result.length).toBeGreaterThan(0)
   })
 
   it('should support JSON output with schema', async () => {
@@ -49,7 +53,8 @@ describe('ai template tag', () => {
   })
 
   it('should support streaming responses', async () => {
-    const stream = ai`List some items`
+    const config: AIFunctionOptions = { model }
+    const stream = ai`List some items${config}`
     const collected: string[] = []
 
     for await (const chunk of stream) {
