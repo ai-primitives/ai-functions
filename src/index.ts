@@ -1,9 +1,13 @@
 import { createAIFunction, createTemplateFunction } from './factory'
+import { createListFunction } from './factory/list'
 import { AI, ListFunction, BaseTemplateFunction, AIFunctionOptions } from './types'
 import { z } from 'zod'
 
 // Create the main template function with async iteration support
 const templateFn = createTemplateFunction()
+
+// Create the list function with async iteration support
+const listFn = createListFunction()
 
 // Create the categorizeProduct function with proper schema
 const categorizeProduct = createAIFunction(
@@ -39,8 +43,7 @@ const aiFn = createWrappedTemplateFunction(templateFn)
 export const ai = Object.assign(aiFn, { categorizeProduct }) as unknown as AI
 
 // Create the list function with template literal and async iteration support
-const listFn = createWrappedTemplateFunction(templateFn)
-export const list = listFn as ListFunction
+export const list = createWrappedTemplateFunction(listFn) as ListFunction
 
 // Export types for consumers
 export * from './types'
