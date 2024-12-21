@@ -232,4 +232,95 @@ describe('createTemplateFunction', () => {
     expect(items.length).toBe(3)
     items.forEach((item: string) => expect(item.split(' ').length).toBe(1))
   })
+
+  describe('concurrency handling', () => {
+    it('should respect concurrency limits', async () => {
+      const fn = createTemplateFunction()
+      const startTime = Date.now()
+      const tasks = Array(5).fill(null).map((_, i) => 
+        (fn as any)`task ${i}`({ 
+          concurrency: { 
+            concurrency: 2,
+            interval: 1000,
+            intervalCap: 2
+          }
+        })
+      )
+      
+      const results = await Promise.all(tasks)
+      const endTime = Date.now()
+      
+      // With concurrency of 2 and 5 tasks, it should take at least 2 intervals
+      expect(endTime - startTime).toBeGreaterThan(1900)
+      expect(results).toHaveLength(5)
+      results.forEach((result: string) => {
+        expect(typeof result).toBe('string')
+        expect(result.length).toBeGreaterThan(0)
+      })
+    })
+
+    it('should handle concurrent streaming requests', async () => {
+      const fn = createTemplateFunction()
+      const streams = Array(3).fill(null).map((_, i) => 
+        (fn as any)`generate a short story about item ${i}`({
+          concurrency: { concurrency: 2 }
+        })
+      )
+      
+      const results = await Promise.all(
+        streams.map(async stream => {
+          const chunks: string[] = []
+          for await (const chunk of stream) {
+            chunks.push(chunk)
+          }
+          return chunks
+        })
+      )
+      
+      expect(results).toHaveLength(3)
+      results.forEach(chunks => {
+        expect(chunks.length).toBeGreaterThan(0)
+        expect(chunks.every(chunk => typeof chunk === 'string')).toBe(true)
+      })
+    })
+
+    it('should queue requests when concurrency limit is reached', async () => {
+      const fn = createTemplateFunction()
+      const executionOrder: number[] = []
+      
+      const tasks = Array(4).fill(null).map((_, i) => 
+        (fn as any)`task ${i}`({
+          concurrency: { 
+            concurrency: 1,
+            autoStart: true
+          }
+        }).then(() => {
+          executionOrder.push(i)
+          return i
+        })
+      )
+      
+      const results = await Promise.all(tasks)
+      
+      // With concurrency of 1, tasks should complete in order
+      expect(executionOrder).toEqual([0, 1, 2, 3])
+      expect(results).toEqual([0, 1, 2, 3])
+    })
+
+    it('should handle errors in concurrent requests', async () => {
+      const fn = createTemplateFunction()
+      const tasks = Array(3).fill(null).map((_, i) => 
+        (fn as any)`${i === 1 ? '{invalid json}' : 'task ' + i}`({
+          concurrency: { concurrency: 2 },
+          outputFormat: 'json'
+        }).catch((err: Error) => `error-${i}`)
+      )
+      
+      const results = await Promise.all(tasks)
+      expect(results).toHaveLength(3)
+      expect(results[1]).toContain('error-1')
+      expect(typeof results[0]).toBe('string')
+      expect(typeof results[2]).toBe('string')
+    })
+  })
 })

@@ -4,7 +4,8 @@ import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@
 import { LanguageModelV1 } from '@ai-sdk/provider'
 import { Response } from 'undici'
 import { z } from 'zod'
-import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise } from '../types'
+import PQueue from 'p-queue'
+import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue } from '../types'
 
 // PLACEHOLDER: imports and type definitions
 
@@ -107,8 +108,16 @@ export function createTextResponse(result: GenerateResult): Response {
 
 export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): BaseTemplateFunction {
   let currentPrompt: string | undefined
+  let queue: Queue | undefined
 
-  const templateFn = async (prompt: string, options: AIFunctionOptions = defaultOptions) => {
+  const initQueue = (options: AIFunctionOptions) => {
+    if (!queue && options.concurrency) {
+      queue = new PQueue(options.concurrency)
+    }
+    return queue
+  }
+
+  const templateFn = async (prompt: string, options: AIFunctionOptions = defaultOptions): Promise<string> => {
     currentPrompt = prompt
     
     const modelParams = {
@@ -121,52 +130,74 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
       seed: options.seed,
       system: options.system,
     }
-    
-    if (options.outputFormat === 'json') {
-      const model = openai('gpt-4o-mini', { structuredOutputs: true })
-      if (options.schema) {
-        const schema = options.schema instanceof z.ZodType 
-          ? options.schema 
-          : z.object(Object.fromEntries(
-              Object.entries(options.schema as Record<string, string>).map(([key, type]) => [
-                key,
-                type === 'string' ? z.string() :
-                type === 'number' ? z.number() :
-                type === 'boolean' ? z.boolean() :
-                type === 'array' ? z.array(z.unknown()) :
-                type === 'object' ? z.record(z.string(), z.unknown()) :
-                z.unknown()
-              ])
-            ))
-        const result = await generateObject({
-          model,
-          schema,
+
+    const executeRequest = async (): Promise<string> => {
+      try {
+        if (options.outputFormat === 'json') {
+          const model = openai('gpt-4o-mini', { structuredOutputs: true })
+          if (options.schema) {
+            const schema = options.schema instanceof z.ZodType 
+              ? options.schema 
+              : z.object(Object.fromEntries(
+                  Object.entries(options.schema as Record<string, string>).map(([key, type]) => [
+                    key,
+                    type === 'string' ? z.string() :
+                    type === 'number' ? z.number() :
+                    type === 'boolean' ? z.boolean() :
+                    type === 'array' ? z.array(z.unknown()) :
+                    type === 'object' ? z.record(z.string(), z.unknown()) :
+                    z.unknown()
+                  ])
+                ))
+            const result = await generateObject({
+              model,
+              schema,
+              prompt,
+              ...modelParams,
+            })
+            return JSON.stringify(result.object)
+          } else {
+            const result = await generateObject({
+              model,
+              output: 'no-schema',
+              prompt,
+              ...modelParams,
+            })
+            return JSON.stringify(result.object)
+          }
+        }
+
+        const result = (await generateText({
+          model: options.model || openai('gpt-4o-mini'),
           prompt,
           ...modelParams,
-        })
-        return JSON.stringify(result.object)
-      } else {
-        const result = await generateObject({
-          model,
-          output: 'no-schema',
-          prompt,
-          ...modelParams,
-        })
-        return JSON.stringify(result.object)
+          ...options,
+        })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
+
+        if (!result) {
+          throw new Error('No result received from model')
+        }
+
+        return result.text
+      } catch (error) {
+        console.error('Error in executeRequest:', error)
+        return 'Error: Failed to generate text'
       }
     }
 
-    const result = await generateText({
-      model: options.model || openai('gpt-4o-mini'),
-      prompt,
-      ...modelParams,
-      ...options,
-    })
-
-    return result.text
+    try {
+      const currentQueue = initQueue(options)
+      if (!currentQueue) {
+        return executeRequest()
+      }
+      return currentQueue.add(executeRequest)
+    } catch (error) {
+      console.error('Error in templateFn:', error)
+      return 'Error: Failed to generate text'
+    }
   }
 
-  const asyncIterator = async function* (prompt: string) {
+  const asyncIterator = async function* (prompt: string): AsyncGenerator<string> {
     currentPrompt = prompt
     const modelParams = {
       temperature: defaultOptions.temperature,
@@ -179,26 +210,46 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
       system: defaultOptions.system,
     }
 
-    const result = await generateText({
-      model: defaultOptions.model || openai('gpt-4o-mini'),
-      prompt,
-      maxRetries: 2,
-      abortSignal: undefined,
-      headers: undefined,
-      ...modelParams,
-      ...defaultOptions,
-    })
+    const executeRequest = async (): Promise<GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>> => {
+      const result = (await generateText({
+        model: defaultOptions.model || openai('gpt-4o-mini'),
+        prompt,
+        maxRetries: 2,
+        abortSignal: undefined,
+        headers: undefined,
+        ...modelParams,
+        ...defaultOptions,
+      })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
 
-    if (isStreamingResult(result)) {
-      for await (const chunk of result.experimental_stream) {
-        yield chunk
+      if (!result) {
+        throw new Error('No result received from model')
       }
-    } else {
-      yield result.text
+
+      return result
+    }
+
+    try {
+      const currentQueue = initQueue(defaultOptions)
+      const result = currentQueue 
+        ? await currentQueue.add(executeRequest)
+        : await executeRequest()
+
+      if (isStreamingResult(result)) {
+        for await (const chunk of result.experimental_stream) {
+          yield chunk
+        }
+      } else if (result) {
+        yield result.text
+      } else {
+        yield 'Error: No result received'
+      }
+    } catch (error) {
+      console.error('Error in asyncIterator:', error)
+      yield 'Error: Failed to generate text'
     }
   }
 
-  const createAsyncIterablePromise = <T>(promise: Promise<T>, prompt: string): AsyncIterablePromise<T> => {
+  const createAsyncIterablePromise = <T extends string>(promise: Promise<T>, prompt: string): AsyncIterablePromise<T> => {
     const asyncIterable = {
       [Symbol.asyncIterator]: () => asyncIterator(prompt)
     }
@@ -232,7 +283,10 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
         const prompt = opts.prompt || currentPrompt || ''
         return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...opts }), prompt)
       },
-      [Symbol.asyncIterator]: (): AsyncIterator<string> => asyncIterator(currentPrompt || '')
+      [Symbol.asyncIterator]: (): AsyncIterator<string> => asyncIterator(currentPrompt || ''),
+      get queue() {
+        return queue
+      }
     }
   ) as BaseTemplateFunction
 
