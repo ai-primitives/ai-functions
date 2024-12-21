@@ -106,30 +106,28 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
           prompt: `Generate a list of items based on this prompt: ${prompt}`,
           system: options.system,
           ...modelParams,
-          signal: options.signal
+          signal: options.signal,
+          onChunk: ({ chunk }: { chunk: { type: string; text?: string } }) => {
+            if (chunk.type === 'text-delta' && options.streaming?.onProgress) {
+              options.streaming.onProgress(chunk.text || '')
+            }
+          }
         }
 
         const { elementStream } = streamObject(streamOptions)
 
-        try {
-          for await (const item of elementStream) {
-            if (options.signal?.aborted) {
-              throw new Error('Stream was aborted')
-            }
-            yield item
+        for await (const item of elementStream) {
+          if (options.signal?.aborted) {
+            throw new Error('Stream was aborted')
           }
-        } catch (error) {
-          if (error instanceof Error) {
-            if (error.name === 'AbortError' || options.signal?.aborted) {
-              throw new Error('Stream was aborted')
-            }
-            throw error
+          if (options.streaming?.onProgress) {
+            options.streaming.onProgress(item)
           }
-          throw error
+          yield item
         }
       } catch (error) {
         if (error instanceof Error) {
-          if (error.name === 'AbortError' || options.signal?.aborted) {
+          if (error.name === 'AbortError' || (error as any).code === 'ABORT_ERR' || options.signal?.aborted) {
             throw new Error('Stream was aborted')
           } else if (error.name === 'TimeoutError') {
             throw new Error('Stream timed out')
@@ -143,17 +141,7 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
     const queue = getQueue(options)
     if (queue) {
       const generator = await queue.add(performRequest)
-      try {
-        yield* generator
-      } catch (error) {
-        if (error instanceof Error) {
-          if (error.name === 'AbortError' || options.signal?.aborted) {
-            throw new Error('Stream was aborted')
-          }
-          throw error
-        }
-        throw error
-      }
+      yield* generator
     } else {
       yield* performRequest()
     }
@@ -191,29 +179,32 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
 
   function createTemplateResult(prompt: string, options: AIFunctionOptions): TemplateResult {
     const promise = templateFn(prompt, options)
-    const result = Object.assign(
+
+    // Create the base result object
+    const baseResult = {
+      call: (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts }),
+      then: (onfulfilled?: ((value: string) => string | PromiseLike<string>) | null | undefined) =>
+        promise.then(onfulfilled),
+      catch: (onrejected?: ((reason: any) => string | PromiseLike<string>) | null | undefined) =>
+        promise.catch(onrejected),
+      finally: (onfinally?: (() => void) | null | undefined) =>
+        promise.finally(onfinally)
+    }
+
+    // Create a proxy that handles both function calls and async iteration
+    const result = new Proxy(
       async function(opts?: AIFunctionOptions) {
         return templateFn(prompt, { ...options, ...opts })
       },
       {
-        [Symbol.asyncIterator]: () => executeStreamingRequest(prompt, options),
-        call: (opts?: AIFunctionOptions) => templateFn(prompt, { ...options, ...opts }),
-        then: (onfulfilled?: ((value: string) => string | PromiseLike<string>) | null | undefined) =>
-          promise.then(onfulfilled),
-        catch: (onrejected?: ((reason: any) => string | PromiseLike<string>) | null | undefined) =>
-          promise.catch(onrejected),
-        finally: (onfinally?: (() => void) | null | undefined) =>
-          promise.finally(onfinally)
+        get(target, prop, receiver) {
+          if (prop === Symbol.asyncIterator) {
+            return () => executeStreamingRequest(prompt, options)
+          }
+          return baseResult[prop as keyof typeof baseResult] ?? target[prop as keyof typeof target]
+        }
       }
     ) as unknown as TemplateResult
-
-    // Make the result async iterable
-    Object.defineProperty(result, Symbol.asyncIterator, {
-      value: () => executeStreamingRequest(prompt, options),
-      enumerable: false,
-      configurable: true,
-      writable: true
-    })
 
     // Make the result a promise
     Object.setPrototypeOf(result, Promise.prototype)
@@ -245,15 +236,7 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
           const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
           currentPrompt = prompt
 
-          const result = createTemplateResult(prompt, options)
-          Object.defineProperty(result, Symbol.asyncIterator, {
-            value: () => executeStreamingRequest(prompt, options),
-            enumerable: false,
-            configurable: true,
-            writable: true
-          })
-
-          return result
+          return createTemplateResult(prompt, options)
         }
 
         const options = { ...defaultOptions, ...stringsOrOptions }
@@ -262,14 +245,7 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
       {
         withOptions: (opts?: AIFunctionOptions) => {
           const mergedOptions = { ...defaultOptions, ...opts }
-          const result = createTemplateResult(currentPrompt || '', mergedOptions)
-          Object.defineProperty(result, Symbol.asyncIterator, {
-            value: () => executeStreamingRequest(currentPrompt || '', mergedOptions),
-            enumerable: false,
-            configurable: true,
-            writable: true
-          })
-          return result
+          return createTemplateResult(currentPrompt || '', mergedOptions)
         },
         queue: currentQueue
       }
