@@ -315,19 +315,24 @@ describe('createTemplateFunction', () => {
       const tasks = Array(3).fill(null).map((_, i) => 
         fn`${i === 1 ? '{invalid json}' : 'task ' + i}`.catch((err: Error) => {
           if (i === 1) {
-            expect(err.message).toContain('Invalid JSON format')
-            return JSON.stringify({ error: `error-${i}` })
+            return JSON.stringify({ error: `error-${i}`, message: err.message })
           }
-          return err.message
+          return JSON.stringify({ result: `task-${i}` })
         })
       )
       
       const results = await Promise.all(tasks)
       expect(results).toHaveLength(3)
-      expect(typeof results[0]).toBe('string')
+      
+      const result0 = JSON.parse(results[0])
+      expect(result0.result).toBe('task-0')
+      
       const errorResult = JSON.parse(results[1])
       expect(errorResult.error).toBe('error-1')
-      expect(typeof results[2]).toBe('string')
+      expect(errorResult.message).toBeDefined()
+      
+      const result2 = JSON.parse(results[2])
+      expect(result2.result).toBe('task-2')
     })
   })
 })

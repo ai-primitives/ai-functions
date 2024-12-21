@@ -15,7 +15,10 @@ describe('RequestHandler', () => {
     const handler = createRequestHandler()
     const operation = vi.fn().mockResolvedValue('success')
 
-    const result = await handler.execute(operation)
+    const promise = handler.execute(operation)
+    await vi.runAllTimersAsync()
+    const result = await promise
+    
     expect(result).toBe('success')
     expect(operation).toHaveBeenCalledTimes(1)
   })
@@ -41,6 +44,8 @@ describe('RequestHandler', () => {
     await vi.advanceTimersByTimeAsync(100)
     // Advance time for second retry
     await vi.advanceTimersByTimeAsync(200)
+    // Advance remaining timers
+    await vi.runAllTimersAsync()
     
     const result = await promise
     expect(result).toBe('success')
@@ -58,15 +63,17 @@ describe('RequestHandler', () => {
     const operation = vi.fn().mockResolvedValue('success')
 
     // First two requests should be immediate
-    await handler.execute(operation)
-    await handler.execute(operation)
+    const promise1 = handler.execute(operation)
+    const promise2 = handler.execute(operation)
+    await vi.runAllTimersAsync()
+    await Promise.all([promise1, promise2])
 
     // Third request should be delayed
     const startTime = Date.now()
-    const promise = handler.execute(operation)
-    
+    const promise3 = handler.execute(operation)
     await vi.advanceTimersByTimeAsync(1000)
-    await promise
+    await vi.runAllTimersAsync()
+    await promise3
 
     const duration = Date.now() - startTime
     expect(duration).toBeGreaterThanOrEqual(1000)
@@ -74,8 +81,9 @@ describe('RequestHandler', () => {
   })
 
   it('should handle timeouts', async () => {
+    const timeout = 1000;
     const handler = createRequestHandler({
-      timeout: 1000,
+      timeout,
       retry: {
         maxRetries: 0
       }
@@ -86,11 +94,10 @@ describe('RequestHandler', () => {
     }))
 
     const promise = handler.execute(operation)
-    
-    // Advance time past the timeout
+    await vi.advanceTimersByTimeAsync(timeout)
     await vi.runAllTimersAsync()
     
-    await expect(promise).rejects.toThrow('Request timeout')
+    await expect(promise).rejects.toThrow(`Request timed out after ${timeout}ms`)
   })
 
   it('should not retry on non-retryable errors', async () => {
@@ -99,7 +106,10 @@ describe('RequestHandler', () => {
       new AIRequestError('Non-retryable error', undefined, false)
     )
 
-    await expect(handler.execute(operation)).rejects.toThrow('Non-retryable error')
+    const promise = handler.execute(operation)
+    await vi.runAllTimersAsync()
+    
+    await expect(promise).rejects.toThrow('Non-retryable error')
     expect(operation).toHaveBeenCalledTimes(1)
   })
 
@@ -120,8 +130,29 @@ describe('RequestHandler', () => {
     await vi.advanceTimersByTimeAsync(100)
     await vi.advanceTimersByTimeAsync(200)
     await vi.advanceTimersByTimeAsync(400)
+    await vi.runAllTimersAsync()
     
     await expect(promise).rejects.toThrow('Failed after 3 attempts')
     expect(operation).toHaveBeenCalledTimes(3)
+  })
+
+  it('should handle concurrent requests with queue', async () => {
+    const handler = createRequestHandler({
+      concurrency: {
+        concurrency: 2,
+        intervalCap: 2,
+        interval: 1000
+      }
+    })
+
+    const operation = vi.fn().mockResolvedValue('success')
+    const tasks = Array(5).fill(null).map(() => handler.execute(operation))
+    
+    await vi.runAllTimersAsync()
+    const results = await Promise.all(tasks)
+    
+    expect(results).toHaveLength(5)
+    results.forEach(result => expect(result).toBe('success'))
+    expect(operation).toHaveBeenCalledTimes(5)
   })
 }) 

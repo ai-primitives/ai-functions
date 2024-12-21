@@ -31,6 +31,7 @@ export interface RequestHandlingOptions {
   retry?: RetryOptions;
   rateLimit?: RateLimitOptions;
   timeout?: number;
+  concurrency?: ConcurrencyOptions;
 }
 
 export interface StreamProgress {

@@ -140,36 +140,43 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
     const executeRequest = async (): Promise<string> => {
       try {
         if (options.outputFormat === 'json') {
-          const model = openai('gpt-4o-mini', { structuredOutputs: true })
-          if (options.schema) {
-            const schema = options.schema instanceof z.ZodType 
-              ? options.schema 
-              : z.object(Object.fromEntries(
-                  Object.entries(options.schema as Record<string, string>).map(([key, type]) => [
-                    key,
-                    type === 'string' ? z.string() :
-                    type === 'number' ? z.number() :
-                    type === 'boolean' ? z.boolean() :
-                    type === 'array' ? z.array(z.unknown()) :
-                    type === 'object' ? z.record(z.string(), z.unknown()) :
-                    z.unknown()
-                  ])
-                ))
-            const result = await generateObject({
-              model,
-              schema,
-              prompt,
-              ...modelParams,
-            })
-            return JSON.stringify(result.object)
-          } else {
-            const result = await generateObject({
-              model,
-              output: 'no-schema',
-              prompt,
-              ...modelParams,
-            })
-            return JSON.stringify(result.object)
+          try {
+            const model = openai('gpt-4o-mini', { structuredOutputs: true })
+            if (options.schema) {
+              const schema = options.schema instanceof z.ZodType 
+                ? options.schema 
+                : z.object(Object.fromEntries(
+                    Object.entries(options.schema as Record<string, string>).map(([key, type]) => [
+                      key,
+                      type === 'string' ? z.string() :
+                      type === 'number' ? z.number() :
+                      type === 'boolean' ? z.boolean() :
+                      type === 'array' ? z.array(z.unknown()) :
+                      type === 'object' ? z.record(z.string(), z.unknown()) :
+                      z.unknown()
+                    ])
+                  ))
+              const result = await generateObject({
+                model,
+                schema,
+                prompt,
+                ...modelParams,
+              })
+              return JSON.stringify(result.object)
+            } else {
+              const result = await generateObject({
+                model,
+                output: 'no-schema',
+                prompt,
+                ...modelParams,
+              })
+              return JSON.stringify(result.object)
+            }
+          } catch (error) {
+            if (error instanceof Error) {
+              throw new Error(`Invalid JSON format: ${error.message}`)
+            }
+            throw new Error('Invalid JSON format')
           }
         }
 
@@ -186,8 +193,10 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
 
         return result.text
       } catch (error) {
-        console.error('Error in executeRequest:', error)
-        return 'Error: Failed to generate text'
+        if (error instanceof Error) {
+          throw error
+        }
+        throw new Error('Failed to generate text')
       }
     }
 
@@ -198,8 +207,10 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
       }
       return currentQueue.add(executeRequest)
     } catch (error) {
-      console.error('Error in templateFn:', error)
-      return 'Error: Failed to generate text'
+      if (error instanceof Error) {
+        throw error
+      }
+      throw new Error('Failed to generate text')
     }
   }
 

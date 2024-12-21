@@ -1,14 +1,45 @@
 import { generateText, streamObject } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { z } from 'zod'
-import type { AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise } from '../types'
+import PQueue from 'p-queue'
+import type { AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue } from '../types'
+
+function createQueue(options: AIFunctionOptions): Queue | undefined {
+  if (!options.concurrency) {
+    return undefined
+  }
+
+  return new PQueue({
+    concurrency: options.concurrency.concurrency || 1,
+    autoStart: true,
+    intervalCap: options.concurrency.intervalCap || 1,
+    interval: options.concurrency.interval || 0,
+    carryoverConcurrencyCount: true,
+  }) as Queue
+}
 
 export function createListFunction(defaultOptions: AIFunctionOptions = {}): BaseTemplateFunction {
   let currentPrompt: string | undefined
+  let currentQueue: Queue | undefined
+  let queueOptions: AIFunctionOptions | undefined
 
-  const templateFn = async (prompt: string, options: AIFunctionOptions = defaultOptions) => {
-    currentPrompt = prompt
+  const getQueue = (options: AIFunctionOptions): Queue | undefined => {
+    if (!options.concurrency) {
+      return undefined
+    }
 
+    // Create a new queue if options have changed
+    if (!currentQueue || 
+        !queueOptions?.concurrency || 
+        queueOptions.concurrency.concurrency !== options.concurrency.concurrency) {
+      currentQueue = createQueue(options)
+      queueOptions = options
+    }
+
+    return currentQueue
+  }
+
+  const executeRequest = async (prompt: string, options: AIFunctionOptions) => {
     const modelParams = {
       temperature: options.temperature,
       maxTokens: options.maxTokens,
@@ -20,55 +51,117 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
       system: options.system,
     }
 
-    // Generate a list using streamObject with array output
-    const { elementStream } = streamObject({
-      model: options.model || openai('gpt-4o-mini'),
-      output: 'array',
-      schema: z.string(),
-      prompt: `Generate a list of items based on this prompt: ${prompt}`,
-      ...modelParams,
-    })
+    const performRequest = async () => {
+      try {
+        const model = options.model || openai('gpt-4o-mini')
+        const { elementStream } = streamObject({
+          model,
+          output: 'array',
+          schema: z.string(),
+          prompt: `Generate a list of items based on this prompt: ${prompt}`,
+          ...modelParams,
+        })
 
-    // Collect all elements
-    const elements: string[] = []
-    for await (const item of elementStream) {
-      elements.push(item)
+        const elements: string[] = []
+        for await (const item of elementStream) {
+          elements.push(item)
+        }
+
+        return elements.join('\n')
+      } catch (error) {
+        if (error instanceof Error) {
+          throw error
+        }
+        throw new Error('Failed to generate list')
+      }
     }
 
-    // Join the array with newlines for text output
-    return elements.join('\n')
+    const queue = getQueue(options)
+    return queue 
+      ? await queue.add(performRequest)
+      : await performRequest()
   }
 
-  const asyncIterator = async function* (prompt: string) {
-    currentPrompt = prompt
+  const executeStreamingRequest = async function* (prompt: string, options: AIFunctionOptions) {
     const modelParams = {
-      temperature: defaultOptions.temperature,
-      maxTokens: defaultOptions.maxTokens,
-      topP: defaultOptions.topP,
-      frequencyPenalty: defaultOptions.frequencyPenalty,
-      presencePenalty: defaultOptions.presencePenalty,
-      stopSequences: defaultOptions.stop ? Array.isArray(defaultOptions.stop) ? defaultOptions.stop : [defaultOptions.stop] : undefined,
-      seed: defaultOptions.seed,
-      system: defaultOptions.system,
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      topP: options.topP,
+      frequencyPenalty: options.frequencyPenalty,
+      presencePenalty: options.presencePenalty,
+      stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
+      seed: options.seed,
+      system: options.system,
     }
 
-    const { elementStream } = streamObject({
-      model: defaultOptions.model || openai('gpt-4o-mini'),
-      output: 'array',
-      schema: z.string(),
-      prompt: `Generate a list of items based on this prompt: ${prompt}`,
-      ...modelParams,
-    })
+    const performRequest = async function* () {
+      try {
+        const model = options.model || openai('gpt-4o-mini')
+        const { elementStream } = streamObject({
+          model,
+          output: 'array',
+          schema: z.string(),
+          prompt: `Generate a list of items based on this prompt: ${prompt}`,
+          ...modelParams,
+        })
 
-    // Yield each item individually for streaming
-    for await (const item of elementStream) {
-      yield item
+        for await (const item of elementStream) {
+          yield item
+        }
+      } catch (error) {
+        if (error instanceof Error) {
+          throw error
+        }
+        throw new Error('Failed to generate list')
+      }
+    }
+
+    const queue = getQueue(options)
+    if (queue) {
+      const generator = await queue.add(() => performRequest())
+      for await (const item of generator) {
+        yield item
+      }
+    } else {
+      for await (const item of performRequest()) {
+        yield item
+      }
     }
   }
 
-  const createAsyncIterablePromise = <T>(promise: Promise<T>, prompt: string): AsyncIterablePromise<T> => {
+  const templateFn = async (prompt: string, options: AIFunctionOptions = defaultOptions) => {
+    currentPrompt = prompt
+    const mergedOptions = { ...defaultOptions, ...options }
+
+    try {
+      return await executeRequest(prompt, mergedOptions)
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error
+      }
+      throw new Error('Failed to generate list')
+    }
+  }
+
+  const asyncIterator = async function* (prompt: string, options: AIFunctionOptions = defaultOptions) {
+    currentPrompt = prompt
+    const mergedOptions = { ...defaultOptions, ...options }
+
+    try {
+      for await (const item of executeStreamingRequest(prompt, mergedOptions)) {
+        yield item
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error
+      }
+      throw new Error('Failed to generate list')
+    }
+  }
+
+  const createAsyncIterablePromise = <T>(promise: Promise<T>, prompt: string, options: AIFunctionOptions = defaultOptions): AsyncIterablePromise<T> => {
     const asyncIterable = {
-      [Symbol.asyncIterator]: () => asyncIterator(prompt)
+      [Symbol.asyncIterator]: () => asyncIterator(prompt, options)
     }
     return Object.assign(promise, asyncIterable) as AsyncIterablePromise<T>
   }
@@ -76,7 +169,7 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
   const baseFn = Object.assign(
     (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): AsyncIterablePromise<string> => {
       if (!stringsOrOptions) {
-        return createAsyncIterablePromise(templateFn('', defaultOptions), '')
+        return createAsyncIterablePromise(templateFn('', defaultOptions), '', defaultOptions)
       }
 
       if (Array.isArray(stringsOrOptions)) {
@@ -85,22 +178,31 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
           throw new Error('Template literal slots must match provided values')
         }
 
+        // Handle the case where the last value is an options object
         const lastValue = values[values.length - 1]
-        const options = typeof lastValue === 'object' && !Array.isArray(lastValue) ? lastValue as AIFunctionOptions : defaultOptions
-        values = typeof lastValue === 'object' && !Array.isArray(lastValue) ? values.slice(0, -1) : values
-        
-        const prompt = strings.reduce((acc, str, i) => acc + str + (values[i] || ''), '')
-        return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...options }), prompt)
+        let options = defaultOptions
+        let actualValues = values
+        let prompt: string
+
+        if (typeof lastValue === 'object' && !Array.isArray(lastValue)) {
+          options = { ...defaultOptions, ...lastValue as AIFunctionOptions }
+          actualValues = values.slice(0, -1)
+        }
+
+        prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
+        return createAsyncIterablePromise(templateFn(prompt, options), prompt, options)
       }
 
-      return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '')
+      const options = { ...defaultOptions, ...stringsOrOptions }
+      return createAsyncIterablePromise(templateFn('', options), '', options)
     },
     {
       withOptions: (opts: AIFunctionOptions = {}) => {
         const prompt = opts.prompt || currentPrompt || ''
-        return createAsyncIterablePromise(templateFn(prompt, { ...defaultOptions, ...opts }), prompt)
+        const options = { ...defaultOptions, ...opts }
+        return createAsyncIterablePromise(templateFn(prompt, options), prompt, options)
       },
-      [Symbol.asyncIterator]: (): AsyncIterator<string> => asyncIterator(currentPrompt || '')
+      [Symbol.asyncIterator]: (): AsyncIterator<string> => asyncIterator(currentPrompt || '', defaultOptions)
     }
   ) as BaseTemplateFunction
 
