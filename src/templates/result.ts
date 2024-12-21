@@ -38,17 +38,18 @@ export function parseTemplateInput(
 
   if (Array.isArray(stringsOrOptions)) {
     const strings = stringsOrOptions as TemplateStringsArray
-    if (strings.length - 1 !== values.length) {
-      throw new Error('Template literal slots must match provided values')
-    }
-
     const lastValue = values[values.length - 1]
-    const options = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
+    const isOptionsObject = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null && Object.keys(lastValue).length > 0
+    const options = isOptionsObject
       ? { ...defaultOptions, ...lastValue as AIFunctionOptions }
       : defaultOptions
-    const actualValues = typeof lastValue === 'object' && !Array.isArray(lastValue) && lastValue !== null
+    const actualValues = isOptionsObject
       ? values.slice(0, -1)
       : values
+
+    if (strings.length - 1 !== actualValues.length) {
+      throw new Error('Template literal slots must match provided values')
+    }
 
     const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
     return { prompt, options }

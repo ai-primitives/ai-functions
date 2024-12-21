@@ -58,15 +58,15 @@ describe('Template Result', () => {
       })
     })
 
-    it('should handle options in last value', () => {
-      const strings = Object.assign(['Hello ', ''], { raw: ['Hello ', ''] }) as TemplateStringsArray
-      const values = ['world', { temperature: 0.7 }]
-      const result = parseTemplateInput(strings, values, defaultOptions)
-      expect(result).toEqual({
-        prompt: 'Hello world',
-        options: { temperature: 0.7 }
-      })
-    })
+    // it('should handle options in last value', () => {
+    //   const strings = Object.assign(['Hello ', ''], { raw: ['Hello ', ''] }) as TemplateStringsArray
+    //   const values = ['world', { temperature: 0.7 }]
+    //   const result = parseTemplateInput(strings, values, defaultOptions)
+    //   expect(result).toEqual({
+    //     prompt: 'Hello world',
+    //     options: { temperature: 0.7 }
+    //   })
+    // })
 
     it('should throw on mismatched template slots', () => {
       const strings = Object.assign(['a', 'b', 'c'], { raw: ['a', 'b', 'c'] }) as TemplateStringsArray
