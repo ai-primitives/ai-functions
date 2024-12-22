@@ -18,10 +18,15 @@ export type AIFunctionOptions = {
   system?: string
   prompt?: string
   signal?: AbortSignal
+  concurrency?: number
   streaming?: {
     onProgress?: (chunk: string) => void
     enableTokenCounting?: boolean
   }
+}
+
+export interface Queue {
+  add<T>(fn: () => Promise<T> | AsyncGenerator<T, void, unknown>): Promise<T>
 }
 
 export type TemplateResult = Promise<string> & {
@@ -30,7 +35,9 @@ export type TemplateResult = Promise<string> & {
 } & AsyncIterable<string>
 
 export type BaseTemplateFunction = {
-  (strings: TemplateStringsArray, ...values: any[]): TemplateResult
+  (strings: TemplateStringsArray, ...values: any[]): TemplateResult & {
+    (options?: AIFunctionOptions): Promise<string>
+  }
   withOptions: (options: AIFunctionOptions) => TemplateResult
 }
 

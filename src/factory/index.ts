@@ -110,5 +110,9 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
     return createTemplateResult(prompt, options, templateFn)
   }
 
-  return fn as BaseTemplateFunction
+  return Object.assign(fn, {
+    withOptions: (options: AIFunctionOptions) => {
+      return createTemplateResult('', options, templateFn)
+    }
+  }) as BaseTemplateFunction
 }
