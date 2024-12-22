@@ -19,8 +19,8 @@ describe('AI SDK Examples', () => {
         model,
         prompt: 'Write a short story about a robot learning to paint',
         onChunk: ({ chunk }) => {
-          if (chunk.type === 'text-delta') {
-            chunks.push(chunk.text)
+          if (chunk.type === 'text-delta' && chunk.textDelta) {
+            chunks.push(chunk.textDelta)
           }
         }
       })

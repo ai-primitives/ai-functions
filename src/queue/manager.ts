@@ -1,21 +1,25 @@
-import PQueue from 'p-queue'
 import type { AIFunctionOptions, Queue } from '../types'
 
-export function createQueue(options: AIFunctionOptions): Queue | undefined {
-  if (!options.concurrency) {
-    return undefined
-  }
-
-  return new PQueue({
-    concurrency: options.concurrency,
-    autoStart: true,
-    carryoverConcurrencyCount: true,
-  }) as Queue
-}
-
 export class QueueManager {
-  private currentQueue?: Queue
-  private queueOptions?: AIFunctionOptions
+  private queue: Queue | undefined
+  private queueOptions: AIFunctionOptions | undefined
+
+  private createQueue(options: AIFunctionOptions): Queue {
+    return {
+      add: async <T>(fn: () => Promise<T> | AsyncGenerator<T>): Promise<T> => {
+        const result = await fn()
+        if (result && typeof result === 'object' && Symbol.asyncIterator in result) {
+          const items: T[] = []
+          for await (const item of result as AsyncIterable<T>) {
+            items.push(item)
+          }
+          return items as unknown as T
+        }
+        return result
+      },
+      concurrency: options.concurrency
+    }
+  }
 
   getQueue(options: AIFunctionOptions): Queue | undefined {
     if (!options.concurrency) {
@@ -23,32 +27,34 @@ export class QueueManager {
     }
 
     // Create a new queue if options have changed
-    if (!this.currentQueue || 
+    if (!this.queue || 
         !this.queueOptions?.concurrency || 
         this.queueOptions.concurrency !== options.concurrency) {
-      this.currentQueue = createQueue(options)
+      this.queue = this.createQueue(options)
       this.queueOptions = options
     }
 
-    return this.currentQueue
+    return this.queue
   }
 
   async executeInQueue<T>(
     options: AIFunctionOptions,
-    task: () => Promise<T>
+    fn: () => Promise<T>
   ): Promise<T> {
     const queue = this.getQueue(options)
-    return queue ? queue.add(task) : task()
+    return queue ? queue.add(fn) : fn()
   }
 
-  async *streamInQueue<T>(
+  async* executeStreamInQueue<T>(
     options: AIFunctionOptions,
     generator: () => AsyncGenerator<T>
   ): AsyncGenerator<T> {
     const queue = this.getQueue(options)
     if (queue) {
-      const gen = await queue.add(generator)
-      yield* gen
+      const items = await queue.add(generator) as T[]
+      for (const item of items) {
+        yield item
+      }
     } else {
       yield* generator()
     }

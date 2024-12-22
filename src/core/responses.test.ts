@@ -1,36 +1,45 @@
 import { describe, expect, it } from 'vitest'
 import { createJsonResponse, createStreamResponse, createTextResponse } from './responses'
-import type { GenerateJsonResult, StreamingResult, GenerateResult } from 'ai'
+import type { GenerateTextResult } from 'ai'
 
-describe('Response Creation', () => {
+describe('Response Creators', () => {
   it('should create JSON response', () => {
-    const mockResult = {
-      toJsonResponse: () => new Response(JSON.stringify({ test: 'data' }), {
-        headers: { 'Content-Type': 'application/json' }
-      })
-    } as GenerateJsonResult
+    const result = {
+      text: '{"test": true}',
+      experimental_output: null,
+      toolCalls: [],
+      toolResults: [],
+      toJsonResponse: () => new Response('{"test": true}', { headers: { 'Content-Type': 'application/json' } })
+    } as unknown as GenerateTextResult<any, any>
 
-    const response = createJsonResponse(mockResult)
+    const response = createJsonResponse(result)
     expect(response).toBeInstanceOf(Response)
     expect(response.headers.get('Content-Type')).toBe('application/json')
   })
 
   it('should create stream response', () => {
-    const mockResult = {
+    const result = {
+      text: '',
+      experimental_output: null,
+      toolCalls: [],
+      toolResults: [],
       experimental_stream: new ReadableStream()
-    } as StreamingResult
+    } as unknown as GenerateTextResult<any, any>
 
-    const response = createStreamResponse(mockResult)
+    const response = createStreamResponse(result)
     expect(response).toBeInstanceOf(Response)
     expect(response.headers.get('Content-Type')).toBe('text/event-stream')
   })
 
   it('should create text response', () => {
-    const mockResult = {
-      text: 'test content'
-    } as GenerateResult
+    const result = {
+      text: 'Hello, World!',
+      experimental_output: null,
+      toolCalls: [],
+      toolResults: []
+    } as unknown as GenerateTextResult<any, any>
 
-    const response = createTextResponse(mockResult)
+    const response = createTextResponse(result)
     expect(response).toBeInstanceOf(Response)
     expect(response.headers.get('Content-Type')).toBe('text/plain')
   })

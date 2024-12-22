@@ -1,110 +1,62 @@
 import { StreamProgress, ProgressCallback, StreamingOptions } from '../types';
 
 export class StreamProgressTracker {
-  private tokensGenerated: number = 0;
-  private startTime: number = Date.now();
-  private lastUpdateTime: number = Date.now();
-  private tokenRate: number = 0;
-  private readonly options: StreamingOptions;
-  private readonly callback: ProgressCallback;
-  private readonly alpha: number = 0.3; // EMA smoothing factor
+  private startTime: number;
+  private tokenCount: number;
+  private tokenRate: number;
+  private lastUpdate: number;
 
-  constructor(options: StreamingOptions) {
-    this.options = options;
-    this.callback = options.onProgress || (() => {});
+  constructor(
+    private callback: ProgressCallback,
+    private options: StreamingOptions
+  ) {
+    this.startTime = Date.now();
+    this.tokenCount = 0;
+    this.tokenRate = 0;
+    this.lastUpdate = this.startTime;
   }
 
   private updateTokenRate(newTokens: number) {
     const now = Date.now();
-    const timeDiff = now - this.lastUpdateTime;
-    
+    const timeDiff = (now - this.lastUpdate) / 1000; // Convert to seconds
     if (timeDiff > 0) {
-      // Calculate instantaneous rate
-      const instantRate = newTokens / timeDiff;
-      
-      // Apply exponential moving average for smoother rate
-      if (this.tokenRate === 0) {
-        this.tokenRate = instantRate;
-      } else {
-        this.tokenRate = (this.alpha * instantRate) + ((1 - this.alpha) * this.tokenRate);
-      }
-      
-      this.lastUpdateTime = now;
+      this.tokenRate = newTokens / timeDiff;
+      this.lastUpdate = now;
     }
   }
 
-  private estimateTimeRemaining(): number | undefined {
-    if (!this.options.estimateTimeRemaining || this.tokenRate === 0) {
-      return undefined;
-    }
-
-    // Use dynamic estimation based on current progress
-    const progressRatio = this.tokensGenerated / Math.max(100, this.tokensGenerated * 2);
-    const estimatedTotalTokens = Math.max(
-      this.tokensGenerated * (1 + (1 - progressRatio)),
-      this.tokensGenerated + 100
-    );
-    
-    const remainingTokens = estimatedTotalTokens - this.tokensGenerated;
-    const estimatedMs = remainingTokens / this.tokenRate;
-    
-    // Return undefined if estimate is unreasonable
-    return estimatedMs > 0 && estimatedMs < 3600000 ? estimatedMs : undefined;
-  }
-
-  public onChunk(chunk: string) {
-    // Rough token count estimation (can be replaced with more accurate counting)
-    const estimatedTokens = Math.ceil(chunk.length / 4);
-    this.tokensGenerated += estimatedTokens;
-
-    if (this.options.enableTokenCounting) {
-      this.updateTokenRate(estimatedTokens);
-    }
-
-    const progress: StreamProgress = {
-      type: 'chunk',
-      chunk,
-      ...(this.options.enableTokenCounting && {
-        tokensGenerated: this.tokensGenerated,
-      }),
+  private getProgress(): string {
+    const elapsedTime = (Date.now() - this.startTime) / 1000; // Convert to seconds
+    const progress = {
+      tokens: this.tokenCount,
+      tokensPerSecond: this.tokenRate,
+      elapsedTime,
       ...(this.options.estimateTimeRemaining && {
-        estimatedTimeRemaining: this.estimateTimeRemaining(),
-      }),
+        estimatedTimeRemaining: this.tokenRate > 0 ? (this.tokenCount / this.tokenRate) - elapsedTime : 0
+      })
     };
-
-    this.callback(progress);
+    return JSON.stringify(progress);
   }
 
-  public onToken(token: string) {
-    this.tokensGenerated += 1;
-
+  onToken(token: string) {
+    this.tokenCount++;
     if (this.options.enableTokenCounting) {
       this.updateTokenRate(1);
+      this.callback(this.getProgress());
+    } else {
+      this.callback(token);
     }
-
-    const progress: StreamProgress = {
-      type: 'token',
-      chunk: token,
-      ...(this.options.enableTokenCounting && {
-        tokensGenerated: this.tokensGenerated,
-      }),
-      ...(this.options.estimateTimeRemaining && {
-        estimatedTimeRemaining: this.estimateTimeRemaining(),
-      }),
-    };
-
-    this.callback(progress);
   }
 
-  public onComplete() {
-    const progress: StreamProgress = {
-      type: 'complete',
-      ...(this.options.enableTokenCounting && {
-        tokensGenerated: this.tokensGenerated,
-        totalTokens: this.tokensGenerated,
-      }),
+  onComplete() {
+    const progress = {
+      tokens: this.tokenCount,
+      tokensPerSecond: this.tokenRate,
+      elapsedTime: (Date.now() - this.startTime) / 1000,
+      ...(this.options.estimateTimeRemaining && {
+        estimatedTimeRemaining: 0
+      })
     };
-
-    this.callback(progress);
+    this.callback(JSON.stringify(progress));
   }
 } 

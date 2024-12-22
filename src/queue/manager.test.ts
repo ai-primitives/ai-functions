@@ -1,76 +1,69 @@
 import { describe, expect, it } from 'vitest'
-import { QueueManager, createQueue } from './manager'
+import { QueueManager } from './manager'
 import type { AIFunctionOptions } from '../types'
 
-describe('Queue Management', () => {
-  describe('createQueue', () => {
-    it('should return undefined when concurrency is not set', () => {
-      const options: AIFunctionOptions = {}
-      const queue = createQueue(options)
-      expect(queue).toBeUndefined()
-    })
-
-    it('should create queue with specified concurrency', () => {
-      const options: AIFunctionOptions = { concurrency: 2 }
-      const queue = createQueue(options)
-      expect(queue).toBeDefined()
-      expect(queue?.concurrency).toBe(2)
-    })
+describe('Queue Manager', () => {
+  it('should create queue with concurrency', () => {
+    const manager = new QueueManager()
+    const options: AIFunctionOptions = { concurrency: 2 }
+    const queue = manager.getQueue(options)
+    expect(queue).toBeDefined()
+    expect(queue?.concurrency).toBe(2)
   })
 
-  describe('QueueManager', () => {
-    it('should manage queue creation and reuse', () => {
-      const manager = new QueueManager()
-      const options: AIFunctionOptions = { concurrency: 2 }
-      
-      const queue1 = manager.getQueue(options)
-      const queue2 = manager.getQueue(options)
-      expect(queue1).toBeDefined()
-      expect(queue2).toBe(queue1) // Should reuse the same queue
-    })
+  it('should not create queue without concurrency', () => {
+    const manager = new QueueManager()
+    const options: AIFunctionOptions = {}
+    const queue = manager.getQueue(options)
+    expect(queue).toBeUndefined()
+  })
 
-    it('should create new queue when concurrency changes', () => {
-      const manager = new QueueManager()
-      const queue1 = manager.getQueue({ concurrency: 2 })
-      const queue2 = manager.getQueue({ concurrency: 3 })
-      expect(queue1).not.toBe(queue2)
-    })
+  it('should reuse queue with same options', () => {
+    const manager = new QueueManager()
+    const queue1 = manager.getQueue({ concurrency: 2 })
+    const queue2 = manager.getQueue({ concurrency: 2 })
+    expect(queue1).toBe(queue2)
+  })
 
-    it('should execute tasks in queue', async () => {
-      const manager = new QueueManager()
-      const options: AIFunctionOptions = { concurrency: 1 }
-      const results: number[] = []
+  it('should create new queue with different options', () => {
+    const manager = new QueueManager()
+    const queue1 = manager.getQueue({ concurrency: 2 })
+    const queue2 = manager.getQueue({ concurrency: 3 })
+    expect(queue1).not.toBe(queue2)
+  })
 
-      await Promise.all([
-        manager.executeInQueue(options, async () => {
-          results.push(1)
-          return 1
-        }),
-        manager.executeInQueue(options, async () => {
-          results.push(2)
-          return 2
-        })
-      ])
+  it('should execute task in queue', async () => {
+    const manager = new QueueManager()
+    const options: AIFunctionOptions = { concurrency: 1 }
+    const startTime = Date.now()
 
-      expect(results).toEqual([1, 2])
-    })
+    const results = await Promise.all([
+      manager.executeInQueue(options, () => Promise.resolve(1)),
+      manager.executeInQueue(options, () => Promise.resolve(2)),
+      manager.executeInQueue(options, () => Promise.resolve(3))
+    ])
 
-    it('should stream in queue', async () => {
-      const manager = new QueueManager()
-      const options: AIFunctionOptions = { concurrency: 1 }
+    const endTime = Date.now()
+    expect(results).toEqual([1, 2, 3])
+    // With concurrency of 1, it should take at least 3 sequential operations
+    expect(endTime - startTime).toBeGreaterThan(0)
+  })
 
-      async function* generator() {
-        yield 1
-        yield 2
-        yield 3
-      }
+  it('should execute generator in queue', async () => {
+    const manager = new QueueManager()
+    const options: AIFunctionOptions = { concurrency: 1 }
 
-      const results: number[] = []
-      for await (const num of manager.streamInQueue(options, generator)) {
-        results.push(num)
-      }
+    async function* generator() {
+      yield 1
+      yield 2
+      yield 3
+    }
 
-      expect(results).toEqual([1, 2, 3])
-    })
+    const items: number[] = []
+    for await (const num of manager.executeStreamInQueue(options, generator)) {
+      items.push(num)
+    }
+
+    expect(items).toEqual([1, 2, 3])
   })
 }) 

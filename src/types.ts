@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { LanguageModelV1 } from '@ai-sdk/provider'
+import type { GenerateTextResult } from 'ai'
 
 export type AIFunctionOptions = {
   outputFormat?: 'object' | 'array' | 'enum' | 'no-schema'
@@ -22,12 +23,15 @@ export type AIFunctionOptions = {
     onProgress?: (chunk: string) => void
     enableTokenCounting?: boolean
   }
+  concurrency?: number
 }
 
 export type TemplateResult = Promise<string> & {
   call: (opts?: AIFunctionOptions) => Promise<string>
   [Symbol.asyncIterator]: () => AsyncIterator<string>
-} & AsyncIterable<string>
+} & AsyncIterable<string> & {
+  (opts?: AIFunctionOptions): Promise<string>
+}
 
 export type BaseTemplateFunction = {
   (strings: TemplateStringsArray, ...values: any[]): TemplateResult
@@ -39,7 +43,27 @@ export type AIFunction<T extends z.ZodType> = {
   schema: T
 }
 
+export type ListResult = Promise<string> & AsyncIterable<string>
+
 export type ListFunction = {
-  (strings: TemplateStringsArray, ...values: any[]): Promise<string>
-  withOptions: (options: AIFunctionOptions) => Promise<string> & AsyncIterable<string>
+  (strings: TemplateStringsArray, ...values: any[]): ListResult
+  withOptions: (options: AIFunctionOptions) => ListResult
+}
+
+export type Queue = {
+  add: <T>(fn: () => Promise<T> | AsyncGenerator<T>) => Promise<T>
+  concurrency?: number
+}
+
+export type StreamProgress = {
+  onProgress?: (chunk: string) => void
+  enableTokenCounting?: boolean
+}
+
+export type ProgressCallback = (chunk: string) => void
+
+export type StreamingOptions = {
+  onProgress?: ProgressCallback
+  enableTokenCounting?: boolean
+  estimateTimeRemaining?: boolean
 }
