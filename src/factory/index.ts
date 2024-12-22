@@ -23,36 +23,53 @@ async function generateObject<T extends z.ZodType>(
     stopSequences: options?.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
     seed: options?.seed,
     schemaName: options?.schemaName,
-    schemaDescription: options?.schemaDescription
+    schemaDescription: options?.schemaDescription,
+    experimental_providerMetadata: {
+      openai: {
+        structuredOutputs: true
+      }
+    }
   }
 
-  if (args) {
-    // If args are provided, use them as a base for modification
+  // Handle enum output format
+  if (schema instanceof z.ZodEnum) {
     const { object } = await aiGenerateObject({
       ...commonParams,
-      output: 'object',
-      schema,
-      prompt: `Modify this object based on the provided options: ${JSON.stringify(args)}`
-    })
-    return object as z.infer<T>
+      output: 'enum',
+      enum: schema.options,
+      prompt: args?.prompt || options?.prompt || 'Select the most appropriate option'
+    } as any)
+    return schema.parse(object)
   }
 
-  // If no args, generate a new object
+  // Handle object output format
+  const outputFormat = options?.outputFormat || 'object'
+  const prompt = args?.prompt || options?.prompt || (
+    args 
+      ? `Modify this object based on the provided options: ${JSON.stringify(args)}`
+      : 'Generate a new object matching the schema'
+  )
+
   const { object } = await aiGenerateObject({
     ...commonParams,
-    output: 'object',
+    output: outputFormat,
     schema,
-    prompt: 'Generate a new object matching the schema'
-  })
-  return object as z.infer<T>
+    prompt
+  } as any)
+
+  try {
+    return schema.parse(object)
+  } catch (error) {
+    throw new Error(`Failed to validate generated object against schema: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
 }
 
 export function createAIFunction<T extends z.ZodType>(schema: T): AIFunction<T> {
   const fn = async function(args?: z.infer<T>, options?: AIFunctionOptions): Promise<z.infer<T>> {
     if (!args) {
-      return schema.parse(await generateObject(schema))
+      return generateObject(schema, undefined, options)
     }
-    return schema.parse(await generateObject(schema, args, options))
+    return generateObject(schema, args, options)
   }
 
   fn.schema = schema

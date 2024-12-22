@@ -5,7 +5,9 @@ import { z } from 'zod'
 
 describe('AI SDK Examples', () => {
   beforeEach(() => {
-    process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key'
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY environment variable is required')
+    }
   })
 
   const model = openai('gpt-4o-mini')
@@ -31,7 +33,7 @@ describe('AI SDK Examples', () => {
       expect(chunks.length).toBeGreaterThan(0)
       expect(fullText).toBeDefined()
       expect(fullText.length).toBeGreaterThan(0)
-    })
+    }, 30000)
   })
 
   describe('Streaming Objects', () => {
@@ -60,7 +62,7 @@ describe('AI SDK Examples', () => {
         expect(fruit).toHaveProperty('color')
         expect(fruit).toHaveProperty('taste')
       })
-    })
+    }, 30000)
 
     it('should stream partial objects using streamObject', async () => {
       const { partialObjectStream } = streamObject({
@@ -89,7 +91,7 @@ describe('AI SDK Examples', () => {
       expect(finalUpdate.recipe.name).toBeDefined()
       expect(Array.isArray(finalUpdate.recipe.ingredients)).toBe(true)
       expect(Array.isArray(finalUpdate.recipe.steps)).toBe(true)
-    })
+    }, 30000)
 
     it('should handle streaming errors gracefully', async () => {
       let error: Error | undefined
@@ -133,7 +135,7 @@ describe('AI SDK Examples', () => {
       expect(object.character.class).toBeDefined()
       expect(typeof object.character.level).toBe('number')
       expect(Array.isArray(object.character.abilities)).toBe(true)
-    })
+    }, 30000)
 
     it('should generate an enum value', async () => {
       const { object } = await generateObject({
@@ -145,7 +147,7 @@ describe('AI SDK Examples', () => {
 
       expect(['action', 'comedy', 'drama', 'horror', 'sci-fi']).toContain(object)
       expect(object).toBe('sci-fi')
-    })
+    }, 30000)
 
     it('should handle object generation errors', async () => {
       try {
@@ -166,7 +168,7 @@ describe('AI SDK Examples', () => {
           expect(error.cause).toBeDefined()
         }
       }
-    })
+    }, 30000)
   })
 
   describe('Advanced Features', () => {
@@ -201,7 +203,7 @@ describe('AI SDK Examples', () => {
       expect(toolCalls.length).toBeGreaterThan(0)
       expect(toolResults.length).toBeGreaterThan(0)
       expect(toolCalls[0].toolName).toBe('cityAttractions')
-    })
+    }, 30000)
 
     it('should support predicted outputs', async () => {
       const existingCode = `
@@ -211,7 +213,7 @@ interface User {
 }
 `
       const { textStream } = streamText({
-        model: openai('gpt-4o-mini'),
+        model,
         messages: [
           {
             role: 'user',
