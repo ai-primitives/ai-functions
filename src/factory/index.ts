@@ -288,11 +288,21 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
   }
 
   const createAsyncIterablePromise = <T extends string>(promise: Promise<T>, prompt: string, options: AIFunctionOptions = defaultOptions): AsyncIterablePromise<T> => {
-    // Create an async iterator that preserves the streaming context
-    const iterator = async function* () {
+    // Create an async iterator that preserves the streaming context and options
+    async function* createStreamIterator(): AsyncGenerator<string> {
       currentPrompt = prompt;
-      yield* asyncIterator();
-    };
+      const originalOptions = { ...defaultOptions };
+      defaultOptions = { ...defaultOptions, ...options };
+
+      try {
+        const iter = asyncIterator();
+        for await (const chunk of { [Symbol.asyncIterator]: () => iter }) {
+          yield chunk;
+        }
+      } finally {
+        defaultOptions = originalOptions;
+      }
+    }
 
     // Create the callable promise with proper streaming support
     const callablePromise = Object.assign(
@@ -312,7 +322,7 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
 
     // Define Symbol.asyncIterator as non-configurable and non-writable
     Object.defineProperty(callablePromise, Symbol.asyncIterator, {
-      value: iterator,
+      value: () => createStreamIterator(),
       writable: false,
       configurable: false,
       enumerable: true
