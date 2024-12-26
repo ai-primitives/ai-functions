@@ -335,33 +335,60 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
     const basePromise = promise;
 
     // Create the response function
-    const responseFunction = Object.assign(
-      function(opts?: AIFunctionOptions): Promise<T> {
-        if (!opts) return basePromise;
-        const mergedOptions = { ...options, ...opts };
-        currentPrompt = prompt;
-        return templateFn(prompt, mergedOptions) as Promise<T>;
-      },
-      {
-        then: basePromise.then.bind(basePromise),
-        catch: basePromise.catch.bind(basePromise),
-        finally: basePromise.finally.bind(basePromise),
-        [Symbol.asyncIterator](): AsyncIterator<string> {
-          const iter = asyncIterator();
-          return {
-            next(): Promise<IteratorResult<string>> {
-              return iter.next();
-            },
-            return(): Promise<IteratorResult<string>> {
-              return Promise.resolve({ done: true, value: undefined });
-            },
-            throw(error?: any): Promise<IteratorResult<string>> {
-              return Promise.reject(error);
-            }
-          };
+    function responseFunction(opts?: AIFunctionOptions): Promise<T> {
+      if (!opts) return basePromise;
+      const mergedOptions = { ...options, ...opts };
+      currentPrompt = prompt;
+      return templateFn(prompt, mergedOptions) as Promise<T>;
+    }
+
+    // Create the async iterator function
+    const iteratorFn = function(): AsyncIterator<string> {
+      const iter = asyncIterator();
+      return {
+        next(): Promise<IteratorResult<string>> {
+          return iter.next();
+        },
+        return(): Promise<IteratorResult<string>> {
+          return Promise.resolve({ done: true, value: undefined });
+        },
+        throw(error?: any): Promise<IteratorResult<string>> {
+          return Promise.reject(error);
         }
+      };
+    };
+
+    // Define Promise methods and asyncIterator
+    const properties = {
+      then: {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: basePromise.then.bind(basePromise)
+      },
+      catch: {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: basePromise.catch.bind(basePromise)
+      },
+      finally: {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: basePromise.finally.bind(basePromise)
       }
-    );
+    };
+
+    // Explicitly define Symbol.asyncIterator
+    Object.defineProperty(responseFunction, Symbol.asyncIterator, {
+      enumerable: true,
+      configurable: true,
+      writable: true,
+      value: iteratorFn
+    });
+
+    Object.defineProperties(responseFunction, properties);
 
     // Set the prototype to Promise.prototype
     Object.setPrototypeOf(responseFunction, Promise.prototype);
