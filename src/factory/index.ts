@@ -241,42 +241,85 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
     const progressTracker = options.streaming ? 
       new StreamProgressTracker(options.streaming) : undefined;
 
-    const executeRequest = async (): Promise<GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>> => {
-      const result = (await generateText({
-        model: options.model || openai('gpt-4o-mini'),
-        prompt: currentPrompt,
-        maxRetries: 2,
-        ...modelParams,
-        ...options,
-      })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
-
-      if (!result) {
-        throw new Error('No result received from model')
-      }
-
-      return result
-    }
-
     try {
-      const currentQueue = initQueue(options)
-      const result = currentQueue 
-        ? await currentQueue.add(executeRequest)
-        : await executeRequest()
+      if (options.outputFormat === 'json') {
+        const model = options.model || openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o', { structuredOutputs: true })
+        let result;
+        
+        if (options.schema) {
+          const schema = options.schema instanceof z.ZodType 
+            ? options.schema 
+            : z.object(Object.fromEntries(
+                Object.entries(options.schema as Record<string, string>).map(([key, type]) => [
+                  key,
+                  type === 'string' ? z.string() :
+                  type === 'number' ? z.number() :
+                  type === 'boolean' ? z.boolean() :
+                  type === 'array' ? z.array(z.unknown()) :
+                  type === 'object' ? z.record(z.string(), z.unknown()) :
+                  z.unknown()
+                ])
+              ))
+          result = await generateObject({
+            model,
+            schema,
+            prompt: currentPrompt,
+            ...modelParams,
+          })
+        } else {
+          result = await generateObject({
+            model,
+            output: 'no-schema',
+            prompt: currentPrompt,
+            ...modelParams,
+          })
+        }
 
-      if (isStreamingResult(result)) {
-        for await (const chunk of result.experimental_stream) {
-          if (progressTracker) {
-            progressTracker.onChunk(chunk);
+        if (isStreamingResult(result)) {
+          for await (const chunk of result.experimental_stream) {
+            if (progressTracker) {
+              progressTracker.onChunk(chunk);
+            }
+            yield chunk
           }
-          yield chunk
+          progressTracker?.onComplete();
+        } else {
+          const jsonString = JSON.stringify(result.object)
+          if (progressTracker) {
+            progressTracker.onChunk(jsonString);
+            progressTracker.onComplete();
+          }
+          yield jsonString
         }
-        progressTracker?.onComplete();
-      } else if (result) {
-        if (progressTracker) {
-          progressTracker.onChunk(result.text);
-          progressTracker.onComplete();
+      } else {
+        const result = (await generateText({
+          model: options.model || openai('gpt-4o-mini'),
+          prompt: currentPrompt,
+          maxRetries: 2,
+          ...modelParams,
+          ...options,
+        })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
+
+        if (!result) {
+          throw new Error('No result received from model')
         }
-        yield result.text
+
+
+        if (isStreamingResult(result)) {
+          for await (const chunk of result.experimental_stream) {
+            if (progressTracker) {
+              progressTracker.onChunk(chunk);
+            }
+            yield chunk
+          }
+          progressTracker?.onComplete();
+        } else {
+          if (progressTracker) {
+            progressTracker.onChunk(result.text);
+            progressTracker.onComplete();
+          }
+          yield result.text
+        }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to generate text';
@@ -288,47 +331,42 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
   }
 
   const createAsyncIterablePromise = <T extends string>(promise: Promise<T>, prompt: string, options: AIFunctionOptions = defaultOptions): AsyncIterablePromise<T> => {
-    // Create an async iterator that preserves the streaming context and options
-    async function* createStreamIterator(): AsyncGenerator<string> {
-      currentPrompt = prompt;
-      const originalOptions = { ...defaultOptions };
-      defaultOptions = { ...defaultOptions, ...options };
+    // Create the base promise
+    const basePromise = promise;
 
-      try {
-        const iter = asyncIterator();
-        for await (const chunk of { [Symbol.asyncIterator]: () => iter }) {
-          yield chunk;
-        }
-      } finally {
-        defaultOptions = originalOptions;
-      }
-    }
-
-    // Create the callable promise with proper streaming support
-    const callablePromise = Object.assign(
-      async (opts?: AIFunctionOptions): Promise<T> => {
-        if (!opts) return promise;
-        // Preserve streaming configuration when creating new promises
+    // Create the response function
+    const responseFunction = Object.assign(
+      function(opts?: AIFunctionOptions): Promise<T> {
+        if (!opts) return basePromise;
         const mergedOptions = { ...options, ...opts };
         currentPrompt = prompt;
         return templateFn(prompt, mergedOptions) as Promise<T>;
       },
       {
-        then: (onfulfilled?: ((value: T) => T | PromiseLike<T>) | null | undefined, onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.then(onfulfilled, onrejected),
-        catch: (onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.catch(onrejected),
-        finally: (onfinally?: (() => void) | null | undefined): Promise<T> => promise.finally(onfinally),
+        then: basePromise.then.bind(basePromise),
+        catch: basePromise.catch.bind(basePromise),
+        finally: basePromise.finally.bind(basePromise),
+        [Symbol.asyncIterator](): AsyncIterator<string> {
+          const iter = asyncIterator();
+          return {
+            next(): Promise<IteratorResult<string>> {
+              return iter.next();
+            },
+            return(): Promise<IteratorResult<string>> {
+              return Promise.resolve({ done: true, value: undefined });
+            },
+            throw(error?: any): Promise<IteratorResult<string>> {
+              return Promise.reject(error);
+            }
+          };
+        }
       }
     );
 
-    // Define Symbol.asyncIterator as non-configurable and non-writable
-    Object.defineProperty(callablePromise, Symbol.asyncIterator, {
-      value: () => createStreamIterator(),
-      writable: false,
-      configurable: false,
-      enumerable: true
-    });
+    // Set the prototype to Promise.prototype
+    Object.setPrototypeOf(responseFunction, Promise.prototype);
 
-    return callablePromise as AsyncIterablePromise<T>;
+    return responseFunction as AsyncIterablePromise<T>;
   }
 
   const baseFn = Object.assign(
