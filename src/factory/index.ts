@@ -288,22 +288,37 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
   }
 
   const createAsyncIterablePromise = <T extends string>(promise: Promise<T>, prompt: string, options: AIFunctionOptions = defaultOptions): AsyncIterablePromise<T> => {
-    const asyncIterable = {
-      [Symbol.asyncIterator]: asyncIterator
-    }
+    // Create an async iterator that preserves the streaming context
+    const iterator = async function* () {
+      currentPrompt = prompt;
+      yield* asyncIterator();
+    };
+
+    // Create the callable promise with proper streaming support
     const callablePromise = Object.assign(
       async (opts?: AIFunctionOptions): Promise<T> => {
-        if (!opts) return promise
-        return templateFn(prompt, { ...options, ...opts }) as Promise<T>
+        if (!opts) return promise;
+        // Preserve streaming configuration when creating new promises
+        const mergedOptions = { ...options, ...opts };
+        currentPrompt = prompt;
+        return templateFn(prompt, mergedOptions) as Promise<T>;
       },
       {
         then: (onfulfilled?: ((value: T) => T | PromiseLike<T>) | null | undefined, onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.then(onfulfilled, onrejected),
         catch: (onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.catch(onrejected),
         finally: (onfinally?: (() => void) | null | undefined): Promise<T> => promise.finally(onfinally),
-        [Symbol.asyncIterator]: asyncIterable[Symbol.asyncIterator]
       }
-    )
-    return callablePromise as AsyncIterablePromise<T>
+    );
+
+    // Define Symbol.asyncIterator as non-configurable and non-writable
+    Object.defineProperty(callablePromise, Symbol.asyncIterator, {
+      value: iterator,
+      writable: false,
+      configurable: false,
+      enumerable: true
+    });
+
+    return callablePromise as AsyncIterablePromise<T>;
   }
 
   const baseFn = Object.assign(
