@@ -86,7 +86,7 @@ describe('RequestHandler', () => {
   })
 
   it('should handle timeouts', async () => {
-    const timeout = 1000;
+    const timeout = 5000;
     const handler = createRequestHandler({
       requestHandling: {
         timeout,
@@ -163,4 +163,4 @@ describe('RequestHandler', () => {
     results.forEach(result => expect(result).toBe('success'))
     expect(operation).toHaveBeenCalledTimes(5)
   })
-})                                        
+})                                                    

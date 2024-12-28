@@ -17,7 +17,7 @@ export class RequestHandler {
     this.retryOptions = {
       maxRetries: options.maxRetries ?? 2,
       initialDelay: options.retryDelay ?? 100,
-      maxDelay: options.timeout ?? 1000,
+      maxDelay: options.timeout ?? 5000,
       backoffFactor: 2
     }
     this.queue = new PQueue({ 
@@ -137,4 +137,4 @@ export class RequestHandler {
 
 export function createRequestHandler(options: RequestHandlingOptions = {}): RequestHandler {
   return new RequestHandler(options)
-}                                                                                                                                                                                                                                                                                                                      
+}                                                                                                                                                                                                                                                                                                                                                                                                                   

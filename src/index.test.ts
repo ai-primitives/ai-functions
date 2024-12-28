@@ -37,7 +37,7 @@ describe('ai', () => {
         outputFormat: 'json',
         schema
       })
-      const parsed = schema.parse(JSON.parse(result))
+      const parsed = schema.parse(typeof result === 'string' ? JSON.parse(result) : result)
       expect(parsed).toBeDefined()
       expect(typeof parsed.greeting).toBe('string')
       expect(typeof parsed.timestamp).toBe('number')
