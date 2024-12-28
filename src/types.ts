@@ -109,14 +109,8 @@ export type AITemplateFunction = BaseTemplateFunction & {
 }
 
 export interface AI extends AITemplateFunction {
-  categorizeProduct: AIFunction<
-    z.ZodObject<{
-      productType: z.ZodEnum<['App', 'API', 'Marketplace', 'Platform', 'Packaged Service', 'Professional Service', 'Website']>
-      customer: z.ZodString
-      solution: z.ZodString
-      description: z.ZodString
-    }>
-  >
+  // Dynamic function support - any property access creates an AI function
+  [key: string]: AIFunction | AITemplateFunction[keyof AITemplateFunction];
 }
 
 export type ListFunction = BaseTemplateFunction
