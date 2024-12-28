@@ -1,4 +1,4 @@
-import { generateText, streamObject } from 'ai'
+import { streamObject } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { z } from 'zod'
 import PQueue from 'p-queue'
@@ -248,4 +248,4 @@ export function createListFunction(defaultOptions: AIFunctionOptions = {}): Base
   }
 
   return createBaseFunction()
-}                   
+}                                                                            

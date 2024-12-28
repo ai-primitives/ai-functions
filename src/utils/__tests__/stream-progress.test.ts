@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { StreamProgressTracker } from '../stream-progress'
-import { StreamingOptions } from '../../types'
 
 describe('StreamProgressTracker', () => {
   beforeEach(() => {
@@ -96,4 +95,4 @@ describe('StreamProgressTracker', () => {
       estimatedTimeRemaining: expect.any(Number),
     }))
   })
-}) 
+})    

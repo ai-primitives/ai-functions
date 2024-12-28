@@ -1,23 +1,23 @@
-import { createAIFunction, createTemplateFunction } from './factory'
+import { createAIFunction, createTemplateFunction, createAsyncIterablePromise, getProvider } from './factory'
 import { createListFunction } from './factory/list'
-import { AI, ListFunction, BaseTemplateFunction, AIFunctionOptions, TemplateResult } from './types'
-import { z } from 'zod'
+import { 
+  AI, 
+  ListFunction, 
+  BaseTemplateFunction, 
+  AITemplateFunction, 
+  AIFunctionOptions,
+  AsyncIterablePromise
+} from './types'
+import { createSchemaFromTemplate } from './utils/schema'
+
+// Type guard for template strings array
+type TemplateResult = ReturnType<BaseTemplateFunction>
 
 // Create the main template function with async iteration support
 const templateFn = createTemplateFunction()
 
 // Create the list function with async iteration support
 const listFn = createListFunction()
-
-// Create the categorizeProduct function with proper schema
-const categorizeProduct = createAIFunction(
-  z.object({
-    productType: z.enum(['App', 'API', 'Marketplace', 'Platform', 'Packaged Service', 'Professional Service', 'Website']),
-    customer: z.string().describe('ideal customer profile in 3-5 words'),
-    solution: z.string().describe('describe the offer in 4-10 words'),
-    description: z.string().describe('website meta description'),
-  }),
-)
 
 // Create the main AI object with template literal and async iteration support
 function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
@@ -57,11 +57,74 @@ function createWrappedTemplateFunction(baseFn: BaseTemplateFunction): BaseTempla
   return wrappedFn as BaseTemplateFunction
 }
 
-const aiFn = createWrappedTemplateFunction(templateFn)
-export const ai = Object.assign(aiFn, { categorizeProduct }) as unknown as AI
+function createDynamicAI(baseAI: AITemplateFunction): AI {
+  return new Proxy(baseAI as AI, {
+    get(target, prop, receiver) {
+      // If prop is part of baseAI or a symbol, return it directly
+      if (prop in target || typeof prop === 'symbol') {
+        return Reflect.get(target, prop, receiver);
+      }
+      
+      // Create a dynamic function that inherits template function properties
+      const dynamicFn = function(
+        templateObj: Record<string, string>,
+        options: AIFunctionOptions = {}
+      ): Promise<string> | AsyncIterablePromise<string> {
+        // Ensure options is defined and has necessary defaults
+        options = {
+          model: options?.model || getProvider()('gpt-4o'),
+          outputFormat: 'json',  // Default to JSON output for dynamic functions
+          ...options
+        };
+        // Build schema from template object
+        const dynamicSchema = createSchemaFromTemplate(templateObj);
+        
+        // Create and call AI function with schema
+        const newFn = createAIFunction(dynamicSchema);
+        
+        // Handle streaming
+        if (options.streaming) {
+          const asyncIterable = {
+            async *[Symbol.asyncIterator]() {
+              const result = await newFn(templateObj, options);
+              const text = typeof result === 'string' ? result : JSON.stringify(result);
+              yield text;
+            }
+          };
+          
+          const promise = (async () => {
+            const result = await newFn(templateObj, options);
+            return typeof result === 'string' ? result : JSON.stringify(result);
+          })();
+
+          return createAsyncIterablePromise(asyncIterable, promise);
+        }
+        
+        // Handle regular response
+        return (async () => {
+          const result = await newFn(templateObj, options);
+          return typeof result === 'string' ? result : JSON.stringify(result);
+        })();
+      };
+
+      // Copy template function properties
+      Object.assign(dynamicFn, {
+        withOptions: target.withOptions,
+        [Symbol.asyncIterator]: target[Symbol.asyncIterator],
+        queue: target.queue
+      });
+
+      return dynamicFn;
+    },
+  });
+}
+
+const aiFn = createWrappedTemplateFunction(templateFn) as unknown as AITemplateFunction
+export const ai = createDynamicAI(aiFn)
 
 // Create the list function with template literal and async iteration support
 export const list = createWrappedTemplateFunction(listFn) as ListFunction
 
 // Export types for consumers
 export * from './types'
+export { getProvider } from './factory'
