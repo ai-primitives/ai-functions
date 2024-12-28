@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createListFunction } from '../list'
 import { openai } from '@ai-sdk/openai'
-import type { TemplateResult } from '../../types'
 
 beforeEach(() => {
   process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key'
@@ -13,42 +12,42 @@ const model = openai(process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o')
 
 describe('createListFunction', () => {
   it('should generate a list of items', async () => {
-    const list = createListFunction()
-    const result = await list`fun things to do in Miami`({ model })
+    const listFn = createListFunction()
+    const result = await listFn`fun things to do in Miami`({ model })
     expect(result).toBeDefined()
     expect(typeof result).toBe('string')
     expect(result.split('\n').length).toBeGreaterThan(0)
   })
 
   it('should support async iteration', async () => {
-    const list = createListFunction()
+    const listFn = createListFunction()
     const items: string[] = []
-    for await (const item of list`fun things to do in Miami`) {
+    for await (const item of listFn`fun things to do in Miami`) {
       items.push(item)
     }
     expect(items.length).toBeGreaterThan(0)
   })
 
   it('should support configuration options', async () => {
-    const list = createListFunction()
-    const result = await list`fun things to do in Miami`({ model })
+    const listFn = createListFunction()
+    const result = await listFn`fun things to do in Miami`({ model })
     expect(result).toBeDefined()
     expect(typeof result).toBe('string')
     expect(result.split('\n').length).toBeGreaterThan(0)
   })
 
   it('should handle empty input', async () => {
-    const list = createListFunction()
-    const result = await list``({ model })
+    const listFn = createListFunction()
+    const result = await listFn``({ model })
     expect(result).toBeDefined()
     expect(typeof result).toBe('string')
   })
 
   it('should handle concurrent list operations', async () => {
-    const list = createListFunction()
+    const listFn = createListFunction()
     const topics = ['cities', 'foods', 'sports']
     const tasks = topics.map(topic => 
-      list`5 popular ${topic}`({ model, concurrency: 2 })
+      listFn`5 popular ${topic}`({ model, concurrency: 2 })
     )
     
     const results = await Promise.all(tasks)
@@ -59,7 +58,6 @@ describe('createListFunction', () => {
   })
 
   it('should handle concurrent streaming list operations', async () => {
-    const list = createListFunction()
     const topics = ['movies', 'books', 'games']
     
     // Configure the list function with options once
@@ -89,13 +87,13 @@ describe('createListFunction', () => {
   })
 
   it('should handle errors in concurrent list operations', async () => {
-    const list = createListFunction()
+    const listFn = createListFunction()
     const tasks = [
-      list`valid request`({ model }),
-      list`trigger error`({ model }),
-      list`another valid request`({ model })
+      listFn`valid request`({ model }),
+      listFn`trigger error`({ model }),
+      listFn`another valid request`({ model })
     ].map(promise => 
-      promise.catch(err => {
+      promise.catch(() => {
         // If any request fails, we'll handle it gracefully
         return 'error occurred'
       })
@@ -108,4 +106,4 @@ describe('createListFunction', () => {
       expect(result.length).toBeGreaterThan(0)
     })
   })
-})                                                                      
+})                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                

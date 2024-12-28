@@ -1,6 +1,7 @@
-import { type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
+import { type GenerateTextResult, type JSONValue, type CoreTool } from 'ai'
 import { Response } from 'undici'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export type MockGenerateTextResult = GenerateTextResult<
   Record<string, CoreTool<any, any>>,
   JSONValue
@@ -13,6 +14,7 @@ export type MockGenerateObjectResult = GenerateTextResult<
   object: JSONValue
   toJsonResponse: () => Response
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export const createMockTextResponse = (text: string): MockGenerateTextResult => ({
   text,

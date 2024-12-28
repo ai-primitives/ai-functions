@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { RequestHandler, createRequestHandler } from '../request-handler'
+import { createRequestHandler } from '../request-handler'
+import { setTimeout } from 'timers'
 import { AIRequestError } from '../../types'
 
 describe('RequestHandler', () => {
@@ -162,4 +163,4 @@ describe('RequestHandler', () => {
     results.forEach(result => expect(result).toBe('success'))
     expect(operation).toHaveBeenCalledTimes(5)
   })
-})    
+})                                        

@@ -27,6 +27,7 @@ export interface RequestHandlingOptions {
   retryDelay?: number;
   streamingTimeout?: number;
   concurrency?: number;
+  delay?: number;  // Add delay option for rate limiting
   requestHandling?: {
     retry?: RetryOptions;
     rateLimit?: RateLimitOptions;
@@ -71,8 +72,9 @@ export interface AIFunctionOptions {
 }
 
 export type AIFunction<T extends z.ZodTypeAny = z.ZodTypeAny> = {
-  (): Promise<{ schema: T }>
+  (): { schema: T }
   (args: z.infer<T>): Promise<z.infer<T>>
+  (args: z.infer<T>, options: AIFunctionOptions & { streaming: StreamingOptions }): AsyncIterablePromise<string>
   (args: z.infer<T>, options: AIFunctionOptions): Promise<z.infer<T>>
   schema?: T
   queue?: Queue
@@ -108,9 +110,18 @@ export type AITemplateFunction = BaseTemplateFunction & {
   withOptions: (options?: AIFunctionOptions) => AsyncIterablePromise<string>
 }
 
+// Helper type for dynamic function properties
+export interface DynamicAIFunction extends AITemplateFunction {
+  (input: Record<string, string>, options?: AIFunctionOptions): Promise<string> | AsyncIterablePromise<string>;
+  withOptions: AITemplateFunction['withOptions'];
+  queue: AITemplateFunction['queue'];
+  [Symbol.asyncIterator]: AITemplateFunction[typeof Symbol.asyncIterator];
+}
+
 export interface AI extends AITemplateFunction {
   // Dynamic function support - any property access creates an AI function
-  [key: string]: AIFunction | AITemplateFunction[keyof AITemplateFunction];
+  [key: string]: DynamicAIFunction | AITemplateFunction[keyof AITemplateFunction];
+  [Symbol.asyncIterator](): AsyncIterator<string>;
 }
 
 export type ListFunction = BaseTemplateFunction

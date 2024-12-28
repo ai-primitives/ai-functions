@@ -1,6 +1,7 @@
 import type { RequestHandlingOptions } from '../types'
 import { AIRequestError } from '../types'
 import PQueue from 'p-queue'
+import { setTimeout, clearTimeout } from 'timers'
 
 export class RequestHandler {
   private retryOptions: {
@@ -19,7 +20,11 @@ export class RequestHandler {
       maxDelay: options.timeout ?? 1000,
       backoffFactor: 2
     }
-    this.queue = new PQueue({ concurrency: 1 })
+    this.queue = new PQueue({ 
+      concurrency: options.concurrency ?? 1,
+      interval: options.delay ?? 0,
+      intervalCap: options.concurrency ?? 1
+    })
     this.streamingTimeout = options.streamingTimeout ?? 30000
   }
 
@@ -132,4 +137,4 @@ export class RequestHandler {
 
 export function createRequestHandler(options: RequestHandlingOptions = {}): RequestHandler {
   return new RequestHandler(options)
-}                               
+}                                                                                                                                                                                                                                                                                                                      

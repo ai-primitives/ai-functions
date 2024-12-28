@@ -1,15 +1,15 @@
-import { generateText, generateObject, Output, type GenerateTextResult, type GenerateObjectResult, type JSONValue, type CoreTool } from 'ai'
+import { generateText, generateObject, Output, type GenerateTextResult, type JSONValue, type CoreTool } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from '@ai-sdk/openai-compatible'
 import { LanguageModelV1 } from '@ai-sdk/provider'
-import { Response } from 'undici'
+import { Response, type BodyInit } from 'undici'
 import { z } from 'zod'
 import PQueue from 'p-queue'
 import { AIFunction, AIFunctionOptions, BaseTemplateFunction, AsyncIterablePromise, Queue } from '../types'
 import { createRequestHandler } from '../utils/request-handler';
 import { StreamProgressTracker } from '../utils/stream-progress';
 import { AIRequestError } from '../errors'
-import { RequestHandlingOptions, TemplateResult } from '../types';
+import { TemplateResult } from '../types';
 
 // Add this at the top of the file, before any other code
 function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
@@ -18,7 +18,11 @@ function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
 
 // PLACEHOLDER: imports and type definitions
 
+// Use global ReadableStream type from lib.dom.d.ts
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export type GenerateResult = GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export type GenerateJsonResult = GenerateResult & {
   object: JSONValue
@@ -45,20 +49,35 @@ export function isJsonResult(result: GenerateResult): result is GenerateJsonResu
 
 // PLACEHOLDER: response creation functions
 
+// Helper function to create an async iterable promise
+export function createAsyncIterablePromise(asyncIterable: AsyncIterable<string>, promise: Promise<string>): AsyncIterablePromise<string> {
+  return Object.assign(
+    async () => promise,
+    {
+      then: (onfulfilled?: ((value: string) => string | PromiseLike<string>) | null | undefined, onrejected?: ((reason: unknown) => string | PromiseLike<string>) | null | undefined): Promise<string> => promise.then(onfulfilled, onrejected),
+      catch: (onrejected?: ((reason: unknown) => string | PromiseLike<string>) | null | undefined): Promise<string> => promise.catch(onrejected),
+      finally: (onfinally?: (() => void) | null | undefined): Promise<string> => promise.finally(onfinally),
+      [Symbol.asyncIterator]: () => asyncIterable[Symbol.asyncIterator]()
+    }
+  ) as AsyncIterablePromise<string>
+}
+
 export function createAIFunction<T extends z.ZodType>(schema: T) {
-  const fn = async (args?: z.infer<T>, options: AIFunctionOptions = {}) => {
+  const fn = (args?: z.infer<T>, options: AIFunctionOptions = {}): { schema: T } | Promise<z.infer<T>> | AsyncIterablePromise<string> => {
     if (!args) {
-      return { schema }
+      return { schema } as { schema: T }
     }
 
     const requestHandler = createRequestHandler({ requestHandling: options.requestHandling });
+    const progressTracker = options.streaming ? 
+      new StreamProgressTracker(options.streaming) : undefined;
 
-    const result = await requestHandler.execute(async () => {
-      return generateText({
-        model: options.model || getProvider()('gpt-4o-mini') as LanguageModelV1,
+    const executeRequest = async () => {
+      const result = await generateText({
+        model: options.model || getProvider()('gpt-4o') as LanguageModelV1,
         prompt: options.prompt || '',
         maxRetries: 2,
-        experimental_output: Output.object({ schema: schema }),
+        experimental_output: options.streaming ? undefined : Output.object({ schema: schema }),
         system: options.system,
         temperature: options.temperature,
         maxTokens: options.maxTokens,
@@ -66,15 +85,116 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
         frequencyPenalty: options.frequencyPenalty,
         presencePenalty: options.presencePenalty,
         stopSequences: options.stop ? Array.isArray(options.stop) ? options.stop : [options.stop] : undefined,
-        seed: options.seed,
+        seed: options.seed
       });
-    });
 
-    if (!result.experimental_output) {
-      throw new Error('No output received from model')
+      if (!result) {
+        throw new Error('No result received from model')
+      }
+
+      if (!result.experimental_output) {
+        // If no experimental output, try to parse the text as JSON
+        try {
+          const parsed = JSON.parse(result.text);
+          return { ...result, experimental_output: parsed };
+        } catch {
+          throw new Error('No valid output received from model')
+        }
+      }
+
+      return result;
+    };
+
+    if (options.streaming) {
+      const asyncIterable = {
+        async *[Symbol.asyncIterator]() {
+          const result = await requestHandler.execute(executeRequest);
+          if (isStreamingResult(result)) {
+            let fullText = '';
+            let isJson = options?.outputFormat === 'json';
+            
+            for await (const chunk of result.experimental_stream) {
+              if (progressTracker) {
+                progressTracker.onChunk(chunk);
+              }
+              fullText += chunk;
+              // For JSON streaming, only yield complete objects
+              if (!isJson) {
+                yield chunk;
+              }
+            }
+            if (progressTracker) {
+              progressTracker.onComplete();
+            }
+            
+            // Handle JSON parsing if needed
+            if (isJson) {
+              try {
+                const parsed = JSON.parse(fullText);
+                if (options?.schema) {
+                  // Validate against schema if provided
+                  const zodSchema = options.schema instanceof z.ZodType 
+                    ? options.schema 
+                    : z.object(options.schema as Record<string, z.ZodType>);
+                  return zodSchema.parse(parsed);
+                }
+                return parsed;
+              } catch (e: unknown) {
+                const errorMessage = e instanceof Error ? e.message : String(e);
+                throw new Error(`Failed to parse JSON response: ${errorMessage}`);
+              }
+            }
+            return fullText;
+          } else {
+            const output = result.experimental_output;
+            if (typeof output === 'string') {
+              try {
+                const parsed = JSON.parse(output);
+                if (progressTracker) {
+                  progressTracker.onChunk(JSON.stringify(parsed));
+                  progressTracker.onComplete();
+                }
+                yield JSON.stringify(parsed);
+              } catch {
+                if (progressTracker) {
+                  progressTracker.onChunk(output);
+                  progressTracker.onComplete();
+                }
+                yield output;
+              }
+            } else {
+              const text = JSON.stringify(output);
+              if (progressTracker) {
+                progressTracker.onChunk(text);
+                progressTracker.onComplete();
+              }
+              yield text;
+            }
+          }
+        }
+      };
+
+      const promise = (async () => {
+        const result = await requestHandler.execute(executeRequest);
+        const output = result.experimental_output;
+        return typeof output === 'string' ? output : JSON.stringify(output);
+      })();
+      return createAsyncIterablePromise(asyncIterable, promise);
     }
 
-    return result.experimental_output
+    return (async () => {
+      const result = await requestHandler.execute(executeRequest);
+      const output = result.experimental_output;
+      // Parse the output if it's a string, otherwise return as is
+      if (typeof output === 'string') {
+        try {
+          return JSON.parse(output);
+        } catch {
+          return output;
+        }
+      }
+      return output;
+    })();
   }
 
   fn.schema = schema
@@ -83,7 +203,7 @@ export function createAIFunction<T extends z.ZodType>(schema: T) {
 
 // PLACEHOLDER: createTemplateFunction implementation
 
-function getProvider() {
+export function getProvider() {
   const gateway = process.env.AI_GATEWAY
   const apiKey = process.env.OPENAI_API_KEY
 
@@ -108,7 +228,7 @@ export function createJsonResponse(result: GenerateJsonResult): Response {
 }
 
 export function createStreamResponse(result: StreamingResult): Response {
-  return new Response(result.experimental_stream as unknown as ReadableStream, {
+  return new Response(result.experimental_stream as unknown as BodyInit, {
     headers: { 'Content-Type': 'text/plain' },
   })
 }
@@ -124,10 +244,17 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
   let queue: Queue | undefined
 
   const initQueue = (options: AIFunctionOptions) => {
-    if (!queue && options.concurrency) {
-      queue = new PQueue({ concurrency: options.concurrency })
+    const concurrency = options.concurrency || options.requestHandling?.concurrency || defaultOptions.concurrency || 1;
+    const delay = options.requestHandling?.delay || defaultOptions.requestHandling?.delay || 0;
+    
+    if (!queue || queue.concurrency !== concurrency || (queue as any).options?.interval !== delay) {
+      queue = new PQueue({ 
+        concurrency,
+        interval: delay,
+        intervalCap: concurrency
+      });
     }
-    return queue
+    return queue;
   }
 
   const templateFn = async (prompt: string, options: AIFunctionOptions = defaultOptions): Promise<string> => {
@@ -187,12 +314,14 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
           }
         }
 
+        /* eslint-disable @typescript-eslint/no-explicit-any */
         const result = (await generateText({
-          model: options.model || openai('gpt-4o-mini'),
+          model: options.model || getProvider()('gpt-4o'),
           prompt,
           ...modelParams,
           ...options,
         })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
+        /* eslint-enable @typescript-eslint/no-explicit-any */
 
         if (!result) {
           throw new AIRequestError('No result received from model', undefined, false)
@@ -226,7 +355,10 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
       return
     }
 
-    const options = defaultOptions
+    const options = {
+      ...defaultOptions,
+      concurrency: defaultOptions.concurrency || defaultOptions.requestHandling?.concurrency || 1
+    }
     const modelParams = {
       temperature: options.temperature,
       maxTokens: options.maxTokens,
@@ -241,14 +373,16 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
     const progressTracker = options.streaming ? 
       new StreamProgressTracker(options.streaming) : undefined;
 
+    /* eslint-disable @typescript-eslint/no-explicit-any */
     const executeRequest = async (): Promise<GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>> => {
       const result = (await generateText({
-        model: options.model || openai('gpt-4o-mini'),
+        model: options.model || getProvider()('gpt-4o'),
         prompt: currentPrompt,
+    /* eslint-enable @typescript-eslint/no-explicit-any */
         maxRetries: 2,
         ...modelParams,
         ...options,
-      })) as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>>
+      })) /* eslint-disable @typescript-eslint/no-explicit-any */ as GenerateTextResult<Record<string, CoreTool<any, any>>, Record<string, unknown>> /* eslint-enable @typescript-eslint/no-explicit-any */
 
       if (!result) {
         throw new Error('No result received from model')
@@ -259,9 +393,7 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
 
     try {
       const currentQueue = initQueue(options)
-      const result = currentQueue 
-        ? await currentQueue.add(executeRequest)
-        : await executeRequest()
+      const result = await currentQueue.add(executeRequest)
 
       if (isStreamingResult(result)) {
         for await (const chunk of result.experimental_stream) {
@@ -287,29 +419,14 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
     }
   }
 
-  const createAsyncIterablePromise = <T extends string>(promise: Promise<T>, prompt: string, options: AIFunctionOptions = defaultOptions): AsyncIterablePromise<T> => {
-    const asyncIterable = {
-      [Symbol.asyncIterator]: asyncIterator
-    }
-    const callablePromise = Object.assign(
-      async (opts?: AIFunctionOptions): Promise<T> => {
-        if (!opts) return promise
-        return templateFn(prompt, { ...options, ...opts }) as Promise<T>
-      },
-      {
-        then: (onfulfilled?: ((value: T) => T | PromiseLike<T>) | null | undefined, onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.then(onfulfilled, onrejected),
-        catch: (onrejected?: ((reason: any) => T | PromiseLike<T>) | null | undefined): Promise<T> => promise.catch(onrejected),
-        finally: (onfinally?: (() => void) | null | undefined): Promise<T> => promise.finally(onfinally),
-        [Symbol.asyncIterator]: asyncIterable[Symbol.asyncIterator]
-      }
-    )
-    return callablePromise as AsyncIterablePromise<T>
+  const wrapWithAsyncIterable = (promise: Promise<string>): AsyncIterablePromise<string> => {
+    return createAsyncIterablePromise({ [Symbol.asyncIterator]: asyncIterator }, promise)
   }
 
   const baseFn = Object.assign(
     (stringsOrOptions?: TemplateStringsArray | AIFunctionOptions, ...values: unknown[]): TemplateResult => {
       if (!stringsOrOptions) {
-        return createAsyncIterablePromise(templateFn('', defaultOptions), '', defaultOptions) as TemplateResult
+        return wrapWithAsyncIterable(templateFn('', defaultOptions)) as TemplateResult
       }
 
       if (isTemplateStringsArray(stringsOrOptions)) {
@@ -327,10 +444,10 @@ export function createTemplateFunction(defaultOptions: AIFunctionOptions = {}): 
           : values
 
         const prompt = strings.reduce((acc, str, i) => acc + str + (actualValues[i] || ''), '')
-        return createAsyncIterablePromise(templateFn(prompt, options), prompt, options) as TemplateResult
+        return wrapWithAsyncIterable(templateFn(prompt, options)) as TemplateResult
       }
 
-      return createAsyncIterablePromise(templateFn('', { ...defaultOptions, ...stringsOrOptions }), '', { ...defaultOptions, ...stringsOrOptions }) as TemplateResult
+      return wrapWithAsyncIterable(templateFn('', { ...defaultOptions, ...stringsOrOptions })) as TemplateResult
     },
     {
       withOptions: (opts: AIFunctionOptions = {}) => {

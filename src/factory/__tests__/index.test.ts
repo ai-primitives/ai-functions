@@ -4,7 +4,6 @@ import { createTemplateFunction, createAIFunction } from '../index'
 import { createListFunction } from '../list'
 import type { AIFunctionOptions } from '../../types'
 import { openai } from '@ai-sdk/openai'
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { ai, list } from '../../index'
 
 describe('createAIFunction', () => {
@@ -238,7 +237,11 @@ describe('createTemplateFunction', () => {
   describe('concurrency handling', () => {
     it('should respect concurrency limits', async () => {
       const fn = createTemplateFunction({
-        concurrency: 2
+        concurrency: 2,
+        requestHandling: {
+          delay: 500, // Add artificial delay
+          concurrency: 2
+        }
       })
       const startTime = Date.now()
       const tasks = Array(5).fill(null).map((_, i) => 
