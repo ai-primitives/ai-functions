@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { createAIFunction } from '../src/factory'
+import { createAIFunction } from '../factory'
 
 // Create the writeBook function with proper schema
 const writeBook = createAIFunction(
