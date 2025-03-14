@@ -2,6 +2,19 @@ import { createAIFunction, createTemplateFunction } from './factory'
 import { createListFunction } from './factory/list'
 import { AI, ListFunction, BaseTemplateFunction, AIFunctionOptions, TemplateResult } from './types'
 import { z } from 'zod'
+// Import book-related functions
+import {
+  writeBook,
+  developProposal,
+  draftTableOfContents,
+  outlineChapter,
+  writeSection,
+  reviewChapter,
+  editChapter,
+  reviewBook,
+  editBook,
+  publishBook,
+} from './content/books'
 
 // Create the main template function with async iteration support
 const templateFn = createTemplateFunction()
@@ -58,7 +71,19 @@ function createWrappedTemplateFunction(baseFn: BaseTemplateFunction): BaseTempla
 }
 
 const aiFn = createWrappedTemplateFunction(templateFn)
-export const ai = Object.assign(aiFn, { categorizeProduct }) as unknown as AI
+export const ai = Object.assign(aiFn, {
+  categorizeProduct,
+  writeBook,
+  developProposal,
+  draftTableOfContents,
+  outlineChapter,
+  writeSection,
+  reviewChapter,
+  editChapter,
+  reviewBook,
+  editBook,
+  publishBook,
+}) as unknown as AI
 
 // Create the list function with template literal and async iteration support
 export const list = createWrappedTemplateFunction(listFn) as ListFunction
